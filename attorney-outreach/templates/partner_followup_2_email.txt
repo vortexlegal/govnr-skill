@@ -1,6 +1,6 @@
 Hi $first_name,
 
-If a move ever makes sense for your $practice_phrase, whether for a broader platform, better rates or more support for your clients, I'd be glad to be a confidential sounding board. Reply whenever the timing is right. I won't reach out again unless you do.
+If a move ever makes sense for your $practice_phrase, whether for a stronger platform, rate flexibility or more resources behind your clients, I'd be glad to be a confidential sounding board. Reply whenever the timing is right. I won't reach out again unless you do.
 
 Best,
 $sender_signature
