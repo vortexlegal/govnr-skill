@@ -8,7 +8,7 @@ Hi $first_name,
 
 [[Would you be open to hearing about roles like yours?||Would you be open to a confidential call about roles like yours?||Worth a quick conversation?]]
 
-[[A one-line reply is plenty.||Even a yes or no helps.||A reply here works.]]
+[[Let me know if you're interested or would like to learn more!||Let me know if you'd like to learn more!||If you're interested or want to learn more, just let me know!]]
 
 Best regards,
 $sender_signature

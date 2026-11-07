@@ -2,7 +2,7 @@ Hi $first_name,
 
 [[One question for you: if a firm with a stronger platform wanted to talk about your $practice_desc, would you take a call?||Would you take a call if a firm with a stronger platform wanted to talk about your $practice_desc?]]
 
-[[A yes or no is all I need.||A one-word reply works.||Either answer is helpful.]]
+[[Let me know if you're interested or would like to learn more!||Let me know if you'd like to learn more!||If you're interested or want to learn more, just let me know!]]
 
 Best regards,
 $sender_signature
