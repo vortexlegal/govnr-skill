@@ -90,10 +90,10 @@ def domain_blocked(email: str, blocked: set[str]) -> bool:
 
 
 # Firm leadership is never emailed (Jon's rule): managing partners of any kind, founders,
-# CEOs and other chiefs, chairs, presidents, owners, executive partners.
+# CEOs and other chiefs, presidents, owners, executive partners. Chairs and co-chairs ARE emailed.
 LEADERSHIP_RE = re.compile(
     r"\b(managing|founding|founder\w*|co-?founder\w*|ceo|c\.e\.o|chief|coo|cfo|cmo|cto|cio|clo|"
-    r"chair\w*|vice[- ]chair\w*|president|owner|proprietor|executive partner|executive director|"
+    r"president|owner|proprietor|executive partner|executive director|"
     r"name partner|senior managing|firm leader|head of (?:the )?firm)\b", re.I)
 
 
@@ -449,7 +449,7 @@ def cmd_prepare(a) -> int:
         if not is_partner(c["title"], pattern):
             skip("not a partner title"); continue
         if is_leadership(c["title"]):
-            skip("firm leadership title (managing/founding partner, CEO, chair...)"); continue
+            skip("firm leadership title (managing/founding partner, CEO, president...)"); continue
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
             skip("missing/invalid email"); continue
         if truthy(c["do_not_contact"]):

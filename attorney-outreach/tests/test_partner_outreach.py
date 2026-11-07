@@ -275,10 +275,11 @@ class PartnerOutreachTest(unittest.TestCase):
     def test_leadership_never_emailed(self):
         for t in ["Managing Partner", "Office Managing Partner", "Co-Managing Partner", "Deputy Managing Partner",
                   "Founding Partner", "Founder and Managing Partner", "Co-Founder", "CEO", "Chief Executive Officer",
-                  "Chair, Litigation Group", "Chairman", "Vice Chair", "President", "Owner", "Managing Shareholder",
+                  "President", "Owner", "Managing Shareholder",
                   "Managing Member", "Executive Partner", "Name Partner"]:
             self.assertTrue(po.is_leadership(t), t)
-        for t in ["Partner", "Equity Partner", "Shareholder", "Senior Partner", "Income Partner", "Principal"]:
+        for t in ["Partner", "Equity Partner", "Shareholder", "Senior Partner", "Income Partner", "Principal",
+                  "Chair, Litigation Group", "Partner and Co-Chair, Insurance Coverage", "Vice Chair", "Chairman"]:
             self.assertFalse(po.is_leadership(t), t)
         self.assertNotIn("tbecker@example.com", {r["to"] for r in rows(self.state / "queue.csv")})
 
