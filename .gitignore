@@ -2,3 +2,4 @@ __pycache__/
 *.pyc
 partner-state/
 *.local.csv
+partner-state-personal/

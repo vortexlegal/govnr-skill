@@ -350,5 +350,67 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")
 
 
+class PersonalEmailTest(unittest.TestCase):
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.state = self.dir / "state"
+        self.contacts = self.dir / "crm.csv"
+        with open(self.contacts, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["firstName", "lastName", "email", "personal_email", "currentCompany", "currentTitle",
+                        "practiceAreas"])
+            w.writerow(["Dana", "Whit", "dana@harlow.com", "dana.w@gmail.com", "Harlow LLP", "Partner", "Tax"])
+            w.writerow(["Marc", "Oye", "marc@gmail.com", "", "Bright LLP", "Partner", "Tax"])
+            w.writerow(["Lee", "Park", "lee@park.com", "", "Park LLP", "Partner", "Tax"])
+            w.writerow(["Ana", "Ruiz", "ana@ruiz.com", "ana@ruizfamily.net", "Ruiz PA", "Shareholder", "Tax"])
+            w.writerow(["Kim", "Ng", "kim@ng.com", "kim.ng@yahoo.com", "Ng LLP", "Partner", "Tax"])
+        self.verified = self.dir / "zb.csv"
+        with open(self.verified, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["Email Address", "ZB Status"])
+            w.writerows([["dana.w@gmail.com", "valid"], ["marc@gmail.com", "invalid"],
+                         ["ana@ruizfamily.net", "catch-all"], ["kim.ng@yahoo.com", "valid"]])
+
+    def prepare(self, *extra):
+        return run("prepare", "--state", str(self.state), *SENDER, "--contacts", str(self.contacts),
+                   "--sender-address", "123 Main St", "--email-type", "personal", *extra)
+
+    def test_personal_pick(self):
+        self.assertEqual(po.personal_email({"email": "a@firm.com", "personal_email": "a@x.org"}), "a@x.org")
+        self.assertEqual(po.personal_email({"email": "a@firm.com; a@gmail.com"}), "a@gmail.com")
+        self.assertEqual(po.personal_email({"email": "a@firm.com"}), "")
+
+    def test_export_then_verified_queue(self):
+        out = self.dir / "to_verify.csv"
+        code, _ = self.prepare("--export-emails", str(out))
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(r["email"] for r in rows(out)),
+                         ["ana@ruizfamily.net", "dana.w@gmail.com", "kim.ng@yahoo.com", "marc@gmail.com"])
+        self.assertEqual(rows(self.state / "queue.csv"), [])
+        code, _ = self.prepare("--verified-file", str(self.verified), "--require-verified")
+        self.assertEqual(code, 0)
+        self.assertEqual(sorted(r["to"] for r in rows(self.state / "queue.csv")),
+                         ["dana.w@gmail.com", "kim.ng@yahoo.com"])
+        reasons = {r["email"] or r["name"]: r["reason"] for r in rows(self.state / "prepare_skipped.csv")}
+        self.assertIn("invalid", reasons["marc@gmail.com"])
+        self.assertIn("catch-all", reasons["ana@ruizfamily.net"])
+        self.assertEqual(reasons["Lee Park"], "no personal email on record")
+
+    def test_require_verified_needs_file(self):
+        code, _ = self.prepare("--require-verified")
+        self.assertEqual(code, 2)
+
+    def test_other_campaign_skipped(self):
+        other = self.dir / "work-state"
+        other.mkdir()
+        with open(other / "sent_log.csv", "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(po.LOG_COLS)
+            w.writerow(["2026-10-01T10:00:00+00:00", "kim@ng.com", "Kim Ng", "Ng LLP", "s", "outlook", "sent",
+                        "", "initial", "tax"])
+        self.prepare("--verified-file", str(self.verified), "--require-verified", "--other-state", str(other))
+        self.assertEqual([r["to"] for r in rows(self.state / "queue.csv")], ["dana.w@gmail.com"])
+
+
 if __name__ == "__main__":
     unittest.main()

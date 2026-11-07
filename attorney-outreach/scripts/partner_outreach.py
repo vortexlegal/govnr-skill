@@ -438,6 +438,72 @@ def due_followups(log: list[dict], days: list[int], now: datetime) -> list[tuple
     return out
 
 
+# ---------- personal email + verification ----------
+
+PERSONAL_EMAIL_COLS = ["personal_email", "personal email", "personalemail", "home email", "home_email",
+                       "private email", "other email"]
+# Consumer mailbox providers. An address in a generic email column only counts as personal on one of these.
+FREEMAIL_DOMAINS = {
+    "gmail.com", "googlemail.com", "yahoo.com", "ymail.com", "rocketmail.com", "outlook.com", "hotmail.com",
+    "live.com", "msn.com", "icloud.com", "me.com", "mac.com", "aol.com", "protonmail.com", "proton.me",
+    "pm.me", "comcast.net", "verizon.net", "att.net", "sbcglobal.net", "bellsouth.net", "cox.net",
+    "charter.net", "earthlink.net", "optonline.net", "gmx.com", "gmx.us", "mail.com", "zoho.com",
+    "fastmail.com", "hey.com", "yahoo.co.uk", "hotmail.co.uk", "btinternet.com", "rogers.com", "shaw.ca",
+}
+EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
+VALID_STATUSES = {"valid", "deliverable", "ok", "verified", "safe"}
+
+
+def is_freemail(email: str) -> bool:
+    return domain(email) in FREEMAIL_DOMAINS
+
+
+def split_emails(value: str) -> list[str]:
+    return [e for e in re.split(r"[\s,;|]+", (value or "").strip().lower()) if EMAIL_RE.fullmatch(e)]
+
+
+def personal_email(raw: dict) -> str:
+    """The contact's personal address: a personal-email column first, else a consumer-domain
+    address in any email column. Empty if they only have a firm address."""
+    lower = {k.strip().lower(): v for k, v in raw.items() if k}
+    for col in PERSONAL_EMAIL_COLS:
+        found = split_emails(lower.get(col, ""))
+        if found:
+            return found[0]
+    for col, v in lower.items():
+        if "email" in col or col == "emails":
+            for e in split_emails(v):
+                if is_freemail(e):
+                    return e
+    return ""
+
+
+def load_verified(paths: list[Path]) -> dict[str, str]:
+    """email -> status from an email-verifier export (ZeroBounce, NeverBounce, Kickbox, Bouncer...).
+    Recognizes columns like email/Email Address and status/result/ZB Status."""
+    out: dict[str, str] = {}
+    for p in paths:
+        for r in read_rows(p):
+            low = {k.strip().lower(): (v or "").strip() for k, v in r.items() if k}
+            email = next((low[k] for k in ("email", "email address", "email_address", "address") if low.get(k)), "")
+            status = next((low[k] for k in ("status", "result", "zb status", "verification status",
+                                            "verdict", "state") if low.get(k)), "")
+            if email:
+                out[email.lower()] = status.lower()
+    return out
+
+
+def contacted_people(states: list[Path]) -> set[tuple[str, str]]:
+    """(name, firm) of everyone sent anything from other campaigns' state, so a partner already
+    emailed at work isn't emailed again at home."""
+    out = set()
+    for st in states:
+        for r in read_rows(st / "sent_log.csv") + read_rows(st / "queue.csv"):
+            if r.get("status", "sent") in ("sent", "replied", ""):
+                out.add((r.get("name", "").strip().lower(), short_firm(r.get("firm", "")).lower()))
+    return out
+
+
 # ---------- prepare ----------
 
 def cmd_prepare(a) -> int:
@@ -461,12 +527,21 @@ def cmd_prepare(a) -> int:
                 if l.strip() and not l.lstrip().startswith("#")]
     signature = sender_signature(a)
 
+    verified = load_verified(a.verified_file)
+    if a.require_verified and not verified:
+        print("Refusing: --require-verified needs --verified-file with an email-verifier export.", file=sys.stderr)
+        return 2
+    other_people = contacted_people(a.other_state)
+
     new_rows, skipped, seen = [], [], set()
     for raw in read_csv(a.contacts):
         c = canon_contact(raw)
-        # A cell may hold several addresses ("a@x.com; b@y.com"): use the first valid one.
-        email = next((e for e in re.split(r"[\s,;|]+", c["email"].strip().lower())
-                      if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", e)), c["email"].strip().lower())
+        if a.email_type == "personal":
+            email = personal_email(raw)
+        else:
+            # A cell may hold several addresses ("a@x.com; b@y.com"): use the first valid one.
+            email = next((e for e in re.split(r"[\s,;|]+", c["email"].strip().lower())
+                          if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", e)), c["email"].strip().lower())
         c["first_name"], c["last_name"], c["city"] = map(tidy_name, (c["first_name"], c["last_name"], c["city"]))
         name = f"{c['first_name']} {c['last_name']}".strip()
 
@@ -478,7 +553,11 @@ def cmd_prepare(a) -> int:
         if is_leadership(c["title"]):
             skip("firm leadership title (managing/founding partner, CEO, president...)"); continue
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
-            skip("missing/invalid email"); continue
+            skip("no personal email on record" if a.email_type == "personal" else "missing/invalid email"); continue
+        if a.require_verified and not a.export_emails and verified.get(email) not in VALID_STATUSES:
+            skip(f"email not verified valid ({verified.get(email) or 'not in verifier results'})"); continue
+        if other_people and (name.lower(), short_firm(c["firm"]).lower()) in other_people:
+            skip("already contacted in another campaign"); continue
         if truthy(c["do_not_contact"]):
             skip("DNU / opted out in CRM"); continue
         if email in suppressed:
@@ -524,6 +603,13 @@ def cmd_prepare(a) -> int:
             "prepared_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         })
 
+    if a.export_emails:
+        # Export-only pass: hand these to the verifier; nothing is queued.
+        write_rows(a.export_emails, ["email", "name", "firm"],
+                   [{"email": r["to"], "name": r["name"], "firm": r["firm"]} for r in new_rows])
+        print(f"Exported {len(new_rows)} address(es) to {a.export_emails} for verification; nothing queued. "
+              f"Skipped {len(skipped)}.")
+        return 0
     write_rows(state / "queue.csv", QUEUE_COLS, read_rows(state / "queue.csv") + new_rows)
     write_rows(state / "prepare_skipped.csv", ["name", "email", "title", "reason"], skipped)
     reasons: dict[str, int] = {}
@@ -847,6 +933,19 @@ def main() -> int:
     p.add_argument("--exclude-practice", default=os.environ.get(
         "OUTREACH_EXCLUDE_PRACTICE", "family law,personal injury,immigration"),
         help="comma-separated practices; partners whose main (first-listed) practice is one of these are skipped")
+    p.add_argument("--email-type", choices=["work", "personal"], default="work",
+                   help="personal = use the personal-email column, or a consumer-domain (gmail, yahoo...) "
+                        "address; partners with only a firm address are skipped")
+    p.add_argument("--verified-file", type=Path, action="append", default=[],
+                   help="email-verifier export (ZeroBounce, NeverBounce...) with email + status columns; repeatable")
+    p.add_argument("--require-verified", action="store_true",
+                   help="queue only addresses the verifier marked valid/deliverable (catch-all, unknown, "
+                        "risky and missing are skipped)")
+    p.add_argument("--other-state", type=Path, action="append", default=[],
+                   help="another campaign's state folder; anyone sent or queued there (same name + firm) is skipped")
+    p.add_argument("--export-emails", type=Path,
+                   help="also write the candidate addresses (after all other filters) to this CSV, "
+                        "to upload to the verifier")
     p.set_defaults(func=cmd_prepare)
 
     p = sub.add_parser("send", help="send queued emails up to the daily cap")

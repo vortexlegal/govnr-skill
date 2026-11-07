@@ -113,6 +113,31 @@ repeat emails.
   lawful basis before cold email.
 - **Volume:** start with a low cap (20–40/day) on a warmed-up sending domain.
 
+## Personal-email campaign (verified addresses only)
+
+Same drip as above (first email, then follow-ups at day 5 and 30 if no reply), sent to partners'
+**personal** addresses instead of their firm address. Keep it in its own state folder.
+
+1. **List candidates:** `prepare --email-type personal` uses the CRM's personal-email column, or an
+   address on a consumer domain (gmail, yahoo, outlook, icloud...) in any email column. Partners with
+   only a firm address are skipped ("no personal email on record"). All other rules (DNU, suppression,
+   leadership, recontact window, excluded practices) still apply.
+   ```bash
+   python3 scripts/partner_outreach.py prepare --state partner-state-personal --email-type personal \
+     --contacts crm_export.csv --suppress-file crm_dnu.csv --other-state partner-state \
+     --export-emails to_verify.csv
+   ```
+   `--export-emails` only writes the addresses; nothing is queued. `--other-state` skips anyone already
+   emailed or queued in the work-email campaign (matched by name + firm), so no one gets both.
+2. **Verify:** upload `to_verify.csv` to an email verifier (ZeroBounce, NeverBounce, Kickbox...) and
+   download the results CSV (needs `email` + `status`/`result` columns).
+3. **Queue verified only:** run the same `prepare` again without `--export-emails`, adding
+   `--verified-file results.csv --require-verified`. Only `valid`/`deliverable` addresses are queued;
+   invalid, catch-all, unknown, risky and unchecked addresses are skipped with the verifier's status
+   as the reason. `--require-verified` refuses to run without a results file.
+4. **Send:** `send --state partner-state-personal ...` exactly as in the main workflow. Show the user
+   the sample before the first live send.
+
 ## Job-matching mode (specific openings)
 `scripts/match_and_draft.py` matches contacts to a positions CSV and drafts an
 email per match for review. See its `--help` and `examples/positions.csv`.
