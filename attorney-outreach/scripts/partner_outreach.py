@@ -540,7 +540,8 @@ LAW_FIRM_RE = re.compile(
 NOT_LAW_FIRM_RE = re.compile(
     r"\b(district attorney|attorney general|public defender|county|department|state of|city of|"
     r"u\.?s\.? |federal|court|university|school|college|e-?discovery|staffing|recruit\w*|consulting|"
-    r"insurance|bank|axiom|quimbee|epiq)\b", re.I)
+    r"insurance|bank|axiom|quimbee|epiq|legal aid|legal services|legal assistance|public interest|"
+    r"justice|clinic|foundation|society|association)\b", re.I)
 LAWYER_HINT_RE = re.compile(r"(esq|atty|lawyer|\blaw|law\b|jd\b|\bjd)", re.I)
 
 
