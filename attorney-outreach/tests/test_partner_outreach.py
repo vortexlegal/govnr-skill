@@ -57,12 +57,12 @@ class PartnerOutreachTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"SENDGRID_API_KEY": "x"}), \
                 mock.patch.object(po, "send_sendgrid", side_effect=lambda a, r: (sent.append(r["to"]) or (True, "202"))), \
                 mock.patch.object(po.time, "sleep"):
-            code, _ = run("send", "--state", str(self.state), *SENDER, "--live", "--ignore-hours", "--daily-cap", "2")
+            code, _ = run("send", "--state", str(self.state), *SENDER, "--transport", "sendgrid", "--live", "--ignore-hours", "--daily-cap", "2")
             self.assertEqual(code, 0)
             self.assertEqual(len(sent), 2)
             self.assertNotIn("marcus.o@example.com", sent)
             # Cap reached: a second run the same day sends nothing.
-            run("send", "--state", str(self.state), *SENDER, "--live", "--ignore-hours", "--daily-cap", "2")
+            run("send", "--state", str(self.state), *SENDER, "--transport", "sendgrid", "--live", "--ignore-hours", "--daily-cap", "2")
             self.assertEqual(len(sent), 2)
         self.assertEqual(len(rows(self.state / "queue.csv")), 1)
         # Re-preparing doesn't re-queue people already emailed.
@@ -72,7 +72,7 @@ class PartnerOutreachTest(unittest.TestCase):
 
     def test_refuses_without_credentials_or_blocked_sender(self):
         with mock.patch.dict(os.environ, {}, clear=True):
-            code, _ = run("send", "--state", str(self.state), *SENDER, "--live", "--ignore-hours")
+            code, _ = run("send", "--state", str(self.state), *SENDER, "--transport", "sendgrid", "--live", "--ignore-hours")
         self.assertEqual(code, 2)
         code, _ = run("send", "--state", str(self.state), "--sender-name", "x", "--sender-email", "a@prividential.ai")
         self.assertEqual(code, 2)
@@ -85,6 +85,18 @@ class PartnerOutreachTest(unittest.TestCase):
             code, out = run("send", "--state", str(self.state), *SENDER, "--live")
         self.assertEqual(code, 0)
         self.assertIn("Outside sending window", out)
+
+    def test_outlook_batch_and_record(self):
+        code, out = run("send", "--state", str(self.state), *SENDER, "--transport", "outlook",
+                        "--live", "--ignore-hours", "--daily-cap", "3")
+        self.assertEqual(code, 0)
+        batch = __import__("json").loads((self.state / "outbox.json").read_text())
+        self.assertEqual(len(batch), 3)
+        run("record", "--state", str(self.state), batch[0]["to"], batch[1]["to"])
+        self.assertEqual(len(rows(self.state / "queue.csv")), 2)
+        # Cap counts Outlook sends: only 1 more allowed today.
+        run("send", "--state", str(self.state), *SENDER, "--transport", "outlook", "--live", "--ignore-hours", "--daily-cap", "3")
+        self.assertEqual(len(__import__("json").loads((self.state / "outbox.json").read_text())), 1)
 
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")

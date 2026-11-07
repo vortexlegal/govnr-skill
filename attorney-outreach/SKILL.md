@@ -37,10 +37,12 @@ python3 scripts/partner_outreach.py prepare --state ./partner-state \
 
 ### 3. Send (scheduled)
 ```bash
-export SENDGRID_API_KEY=...          # or --transport smtp with SMTP_HOST/PORT/USER/PASSWORD
+# Default transport is Outlook (the Microsoft 365 connector, as jbroder@vortexlegal.com).
+# `send --live` writes outbox.json; send each with outlook_send_mail, then
+# `record <emails>` (or `record --status failed ...`). SendGrid/SMTP also supported.
 python3 scripts/partner_outreach.py send --state ./partner-state \
   --sender-name "Jon Broder" --sender-email jbroder@vortexlegal.com \
-  --daily-cap 40 --live
+  --daily-cap 40 --per-firm-daily 1 --live
 ```
 - **Dry run by default.** Without `--live` it only lists what it would send and changes nothing.
 - **Limits:** sends at most `--daily-cap` per Eastern-time day, on weekdays between
@@ -63,7 +65,7 @@ python3 scripts/partner_outreach.py send --state ./partner-state \
   emailed and when, so it can be imported back into the CRM.
 
 ### Files in `--state`
-`queue.csv` (pending), `sent_log.csv` (every attempt), `suppression.csv`,
+`outbox.json` (Outlook batch), `queue.csv` (pending), `sent_log.csv` (every attempt), `suppression.csv`,
 `prepare_skipped.csv`. Keep this folder between runs. It is what prevents
 repeat emails.
 

@@ -51,7 +51,9 @@ ET = ZoneInfo("America/New_York")
 # CRM export column names, in addition to the generic aliases.
 CONTACT_ALIASES["first_name"] += ["firstName", "candidate first name"]
 CONTACT_ALIASES["last_name"] += ["lastName", "candidate last name"]
-CONTACT_ALIASES["email"] += ["work email", "workEmail", "personal email", "personalEmail"]
+# Work email first: outreach goes to the firm address when there is one.
+CONTACT_ALIASES["email"] = ["work_email", "work email", "workemail", *CONTACT_ALIASES["email"],
+                            "personal_email", "personal email", "personalemail"]
 CONTACT_ALIASES["firm"] += ["current_company", "currentcompany", "current company", "current firm"]
 CONTACT_ALIASES["title"] += ["current_title", "currenttitle", "current title"]
 CONTACT_ALIASES["practice_areas"] += ["practiceareas", "specialty", "primary practice area"]
@@ -90,11 +92,28 @@ def is_partner(title: str, pattern: re.Pattern = PARTNER_RE) -> bool:
     return bool(title) and bool(pattern.search(title)) and not NOT_PARTNER_RE.search(title)
 
 
+ACRONYMS = {"M&A", "IP", "ERISA", "ESG", "HIPAA", "GDPR", "CCPA", "SEC", "FCPA", "ADR", "REIT", "PE", "VC",
+            "FDA", "FCC", "FERC", "IPO", "ITC", "PTAB", "ADA", "FINRA", "CFIUS", "UCC", "EB-5", "NLRB", "OSHA"}
+
+
+def parse_areas(value: str) -> list[str]:
+    """Handles 'A; B', 'A, B' and Postgres arrays like {"REAL ESTATE",CONSTRUCTION}."""
+    v = (value or "").strip()
+    if v.startswith("{") and v.endswith("}"):
+        return [x.strip() for x in next(csv.reader([v[1:-1]])) if x.strip() and x.strip().upper() != "NULL"]
+    return split_list(v)
+
+
 def display_practice(areas: list[str]) -> str:
     def fmt(a: str) -> str:
-        return " ".join(w if (w.isupper() or "&" in w) else w.lower() for w in a.split())
+        return " ".join(w if w.upper() in ACRONYMS else w.lower() for w in a.split())
     areas = [fmt(a) for a in areas if a][:2]
     return " and ".join(areas)
+
+
+def tidy_name(s: str) -> str:
+    s = (s or "").strip()
+    return s.title() if s.isupper() or s.islower() else s
 
 
 def read_rows(path: Path) -> list[dict]:
@@ -175,6 +194,7 @@ def cmd_prepare(a) -> int:
     for raw in read_csv(a.contacts):
         c = canon_contact(raw)
         email = c["email"].strip().lower()
+        c["first_name"], c["last_name"], c["city"] = map(tidy_name, (c["first_name"], c["last_name"], c["city"]))
         name = f"{c['first_name']} {c['last_name']}".strip()
 
         def skip(reason):
@@ -194,7 +214,7 @@ def cmd_prepare(a) -> int:
             skip(f"emailed within {a.recontact_days} days"); continue
         if email in queued or email in seen:
             skip("already queued / duplicate"); continue
-        areas = split_list(c["practice_areas"])
+        areas = parse_areas(c["practice_areas"])
         if not areas and a.require_practice:
             skip("no practice area on record"); continue
         seen.add(email)
@@ -304,7 +324,8 @@ def cmd_send(a) -> int:
         return 0
 
     missing = {"sendgrid": [] if os.environ.get("SENDGRID_API_KEY") else ["SENDGRID_API_KEY"],
-               "smtp": [v for v in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD") if not os.environ.get(v)]}[a.transport]
+               "smtp": [v for v in ("SMTP_HOST", "SMTP_USER", "SMTP_PASSWORD") if not os.environ.get(v)],
+               "outlook": []}[a.transport]
     if a.live and missing:
         print(f"Refusing to send: {', '.join(missing)} not set.", file=sys.stderr)
         return 2
@@ -312,20 +333,33 @@ def cmd_send(a) -> int:
     suppressed = load_suppressed(state, a.suppress_file)
     recent = recently_emailed(state, a.recontact_days)
     queue = read_rows(state / "queue.csv")
+    firm_key = lambda f: re.sub(r"[^a-z0-9]+", " ", (f or "").lower()).strip()
+    firms_today: dict[str, int] = {}
+    for r in log:
+        if r.get("status") == "sent" and datetime.fromisoformat(r["sent_at"]).astimezone(ET).date() == today:
+            firms_today[firm_key(r.get("firm"))] = firms_today.get(firm_key(r.get("firm")), 0) + 1
     remaining, attempted, sent, failed = [], 0, 0, 0
-    transport = {"sendgrid": send_sendgrid, "smtp": send_smtp}[a.transport]
+    transport = {"sendgrid": send_sendgrid, "smtp": send_smtp, "outlook": None}[a.transport]
+    batch = []
     limit = budget if a.live else min(a.daily_cap, len(queue))
 
     for row in queue:
         to = row["to"].lower()
         if to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS) or to in recent:
             continue  # dropped from the queue for good
-        if attempted >= limit or failed >= a.max_failures:
+        fk = firm_key(row.get("firm"))
+        if attempted >= limit or failed >= a.max_failures or (fk and firms_today.get(fk, 0) >= a.per_firm_daily):
             remaining.append(row); continue
         attempted += 1
+        if fk:
+            firms_today[fk] = firms_today.get(fk, 0) + 1
         row["subject"] = fix_subject(row["subject"])
         if not a.live:
             print(f"[dry-run] would send to {row['name']} <{to}>: {row['subject']}")
+            remaining.append(row); continue
+        if a.transport == "outlook":
+            # Sent by the Outlook connector (outlook_send_mail); results come back via `record`.
+            batch.append({k: row[k] for k in ("to", "name", "firm", "subject", "body")})
             remaining.append(row); continue
         ok, detail = transport(a, row)
         append_row(state / "sent_log.csv", LOG_COLS, {
@@ -341,6 +375,12 @@ def cmd_send(a) -> int:
             print(f"FAILED {row['name']} <{to}>: {detail}", file=sys.stderr)
         time.sleep(a.delay + random.uniform(0, a.delay))
 
+    if a.transport == "outlook" and a.live:
+        (state / "outbox.json").write_text(json.dumps(batch, indent=2))
+        print(f"OUTLOOK BATCH: {len(batch)} email(s) written to {state / 'outbox.json'} "
+              f"(sent today so far: {sent_today}/{a.daily_cap}). Send each with outlook_send_mail, "
+              f"then log results with `record`.")
+        return 0
     if a.live:
         write_rows(state / "queue.csv", QUEUE_COLS, remaining)
     mode = "LIVE" if a.live else "DRY RUN"
@@ -349,6 +389,26 @@ def cmd_send(a) -> int:
     if failed >= a.max_failures:
         print(f"Stopped after {failed} failures; check sender credentials before the next run.", file=sys.stderr)
         return 1
+    return 0
+
+
+def cmd_record(a) -> int:
+    """Log results of sends done outside this script (Outlook connector)."""
+    state: Path = a.state
+    queue = read_rows(state / "queue.csv")
+    by_to = {r["to"].lower(): r for r in queue}
+    done = set()
+    for to in a.emails:
+        to = to.strip().lower()
+        row = by_to.get(to, {"to": to, "name": "", "firm": "", "subject": ""})
+        append_row(state / "sent_log.csv", LOG_COLS, {
+            "sent_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "to": to,
+            "name": row.get("name", ""), "firm": row.get("firm", ""), "subject": row.get("subject", ""),
+            "transport": "outlook", "status": a.status, "detail": a.detail})
+        if a.status in ("sent", "skipped"):
+            done.add(to)
+        print(f"{a.status:<7} {to}")
+    write_rows(state / "queue.csv", QUEUE_COLS, [r for r in queue if r["to"].lower() not in done])
     return 0
 
 
@@ -394,9 +454,10 @@ def main() -> int:
 
     p = sub.add_parser("send", help="send queued emails up to the daily cap")
     common(p)
-    p.add_argument("--transport", choices=["sendgrid", "smtp"], default="sendgrid")
+    p.add_argument("--transport", choices=["outlook", "sendgrid", "smtp"], default="outlook")
     p.add_argument("--reply-to", default="")
     p.add_argument("--daily-cap", type=int, default=40)
+    p.add_argument("--per-firm-daily", type=int, default=1, help="max partners at the same firm per day")
     p.add_argument("--delay", type=float, default=20, help="base seconds between sends (plus random jitter)")
     p.add_argument("--start-hour", type=int, default=9)
     p.add_argument("--end-hour", type=int, default=17)
@@ -404,6 +465,14 @@ def main() -> int:
     p.add_argument("--max-failures", type=int, default=3)
     p.add_argument("--live", action="store_true", help="actually send (default is a dry run)")
     p.set_defaults(func=cmd_send)
+
+    p = sub.add_parser("record", help="log sends done via the Outlook connector")
+    p.add_argument("--state", type=Path, required=True)
+    p.add_argument("--status", choices=["sent", "failed", "skipped"], default="sent",
+                   help="skipped = not sent and removed from queue (e.g. already emailed per Outlook Sent Items)")
+    p.add_argument("--detail", default="")
+    p.add_argument("emails", nargs="+")
+    p.set_defaults(func=cmd_record)
 
     p = sub.add_parser("suppress", help="add emails to the do-not-contact list (e.g. unsubscribe replies)")
     p.add_argument("--state", type=Path, required=True)
