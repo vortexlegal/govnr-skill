@@ -1,0 +1,6 @@
+contact_id,first_name,last_name,email,firm,title,practice_areas,bar_admissions,years_experience,city,notes,do_not_contact
+C001,Dana,Whitfield,dana.whitfield@example.com,Harlow & Price LLP,Senior Associate,"M&A; private equity; venture financings",NY,7,New York,Leads mid-market buy-side deals,false
+C002,Marcus,Oyelaran,marcus.o@example.com,Brightline Counsel,Of Counsel,"Commercial litigation; contract disputes; arbitration",CA,12,Los Angeles,First-chair trial experience,false
+C003,Priya,Ramanathan,priya.r@example.com,Stonegate Tech Inc.,Product Counsel,"Privacy; GDPR; CCPA; product counseling; SaaS",CA;WA,6,Seattle,In-house at SaaS company,false
+C004,Tom,Becker,tbecker@example.com,Becker Law,Partner,"Estate planning; trusts; probate",TX,20,Austin,,true
+C005,Elena,Sokolova,elena.s@example.com,Meridian Health,Associate General Counsel,"Healthcare regulatory; HIPAA; Stark; compliance",IL,9,Chicago,,false
