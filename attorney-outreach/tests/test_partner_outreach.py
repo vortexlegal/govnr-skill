@@ -259,6 +259,7 @@ class PartnerOutreachTest(unittest.TestCase):
             self.assertIn("0.1", b)
             self.assertEqual(b.lower().count("stronger platform"), 1)
             self.assertNotIn("specific opening", b)
+            self.assertIn("At your level, it's not like", b)
             self.assertLessEqual(b.lower().count("quick"), 1)
             self.assertIn("123 Main St", b)  # address in signature
             self.assertLess(len(b.split("Best regards")[0].split()), 110)
