@@ -126,7 +126,7 @@ record (no "your firm"; placeholder employers such as "Law Offices" are left out
 addresses count. A custom domain in the personal-email field is usually a current or former firm
 mailbox and is skipped unless approved with `--allow-domain`. The CRM's `t`/`f` DNU flag is honored.
 
-**Queued elsewhere but not sent:** `--take-over-queued` moves those people into this campaign and out of
+**Queued elsewhere but not sent:** `--take-over-from <state>` moves those people into this campaign and out of
 the other queue (logged in `moved_to_other_campaign.csv`), so they get the personal drip only.
 
 **Partners and associates.** Run one campaign per audience, each with its own state folder:

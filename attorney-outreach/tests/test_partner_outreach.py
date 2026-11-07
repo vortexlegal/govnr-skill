@@ -479,7 +479,7 @@ class PersonalEmailTest(unittest.TestCase):
                       [{"to": "kim@ng.com", "name": "Kim Ng", "firm": "Ng LLP"},
                        {"to": "x@y.com", "name": "X Y", "firm": "Y LLP"}])
         self.prepare("--verified-file", str(self.verified), "--require-verified",
-                     "--other-state", str(other), "--take-over-queued")
+                     "--take-over-from", str(other))
         self.assertEqual(sorted(r["to"] for r in rows(self.state / "queue.csv")),
                          ["dana.w@gmail.com", "kim.ng@yahoo.com"])
         self.assertEqual([r["to"] for r in rows(other / "queue.csv")], ["x@y.com"])

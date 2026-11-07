@@ -667,7 +667,8 @@ def cmd_prepare(a) -> int:
     if a.require_verified and not verified:
         print("Refusing: --require-verified needs --verified-file with an email-verifier export.", file=sys.stderr)
         return 2
-    other_people = contacted_people(a.other_state, include_queued=not a.take_over_queued)
+    # Sent or queued in --other-state: skipped. Only queued (not sent) in --take-over-from: moved here.
+    other_people = contacted_people(a.other_state) | contacted_people(a.take_over_from, include_queued=False)
     contacts = read_csv(a.contacts)
     firm_doms = firm_domains(a.firm_domains_from, contacts) if a.email_type == "personal" else set()
     allowed_doms = {d.strip().lower().lstrip("@") for d in a.allow_domain}
@@ -766,9 +767,9 @@ def cmd_prepare(a) -> int:
               f"Skipped {len(skipped)}.")
         return 0
     write_rows(state / "queue.csv", QUEUE_COLS, read_rows(state / "queue.csv") + new_rows)
-    if a.take_over_queued and new_rows:
-        n = take_over_queued(a.other_state, {person_key(r["name"], r["firm"]) for r in new_rows}, state)
-        print(f"Took over {n} not-yet-sent row(s) from --other-state queues.")
+    if a.take_over_from and new_rows:
+        n = take_over_queued(a.take_over_from, {person_key(r["name"], r["firm"]) for r in new_rows}, state)
+        print(f"Took over {n} not-yet-sent row(s) from --take-over-from queues.")
     reasons: dict[str, int] = {}
     for s in skipped:
         reasons[s["reason"]] = reasons.get(s["reason"], 0) + 1
@@ -1162,9 +1163,9 @@ def main() -> int:
                         "risky and missing are skipped)")
     p.add_argument("--other-state", type=Path, action="append", default=[],
                    help="another campaign's state folder; anyone sent or queued there (same name + firm) is skipped")
-    p.add_argument("--take-over-queued", action="store_true",
-                   help="people only queued (not yet sent) in an --other-state campaign are queued here "
-                        "instead and removed from that queue; anyone already sent there is still skipped")
+    p.add_argument("--take-over-from", type=Path, action="append", default=[],
+                   help="another campaign's state: people only queued there (not yet sent) are queued here "
+                        "instead and removed from that queue; anyone already sent there is skipped")
     p.add_argument("--allow-domain", action="append", default=[],
                    help="with --email-type personal: a custom domain confirmed as personal (repeatable)")
     p.add_argument("--firm-domains-from", type=Path, action="append", default=[],
