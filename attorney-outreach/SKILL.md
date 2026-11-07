@@ -10,7 +10,7 @@ description: Email law-firm partners from the CRM (VortexRecruitCRM export or an
 Emails partners about **roles similar to their current practice**. It is not
 about any one opening, so the email never names or describes a job. It names
 their practice and firm and asks whether they're open to hearing about
-comparable partner roles.
+partner roles on a stronger platform.
 
 ### 1. Get the contacts
 Export candidates from VortexRecruitCRM (or any CRM) as CSV. The script
