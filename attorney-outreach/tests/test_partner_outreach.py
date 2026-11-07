@@ -169,6 +169,31 @@ class PartnerOutreachTest(unittest.TestCase):
         run("suppress", "--state", str(self.state), first[0]["to"])
         self.assertFalse(self._fus(self._outlook_send()))
 
+    def test_domain_suppression_and_practice_wording(self):
+        sup = po.Suppressed()
+        for e in ["@dorsey.com/", "x@y.com"]:
+            sup.add(e)
+        self.assertIn("a.b@dorsey.com", sup)
+        self.assertIn("a@mail.dorsey.com", sup)
+        self.assertIn("X@Y.com", sup)
+        self.assertNotIn("a@notdorsey.com", sup)
+        self.assertEqual(po.display_practice(["GENERAL PRACTICE", "FRANCHISE", "LABOR & EMPLOYMENT"]),
+                         "franchise and labor & employment")
+        self.assertEqual(po.display_practice(["GENERAL PRACTICE"]), "general practice")
+        self.assertEqual(po.parse_areas('{"REAL ESTATE",M&A}'), ["REAL ESTATE", "M&A"])
+
+    def test_excluded_main_practice(self):
+        import tempfile as tf
+        f = Path(tf.mkdtemp()) / "c.csv"
+        f.write_text("firstName,email,currentTitle,currentCompany,practiceAreas\n"
+                     "A,a@x.com,Partner,X LLP,FAMILY LAW; DIVORCE\n"
+                     "B,b@y.com,Partner,Y LLP,TAX; FAMILY LAW\n"
+                     "C,c@z.com,Partner,Z LLP,PERSONAL INJURY\n")
+        st = Path(tf.mkdtemp())
+        run("prepare", "--state", str(st), *SENDER, "--contacts", str(f), "--sender-company", "V",
+            "--sender-address", "X")
+        self.assertEqual([r["to"] for r in rows(st / "queue.csv")], ["b@y.com"])
+
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")
 

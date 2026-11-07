@@ -104,11 +104,17 @@ def parse_areas(value: str) -> list[str]:
     return split_list(v)
 
 
+# Tags too generic to describe someone's practice; used only if nothing else is on record.
+GENERIC_AREAS = {"general practice", "transactional", "compliance", "regulatory", "general liability",
+                 "unassigned", "other", "admin", "general", "counseling", "consulting"}
+
+
 def display_practice(areas: list[str]) -> str:
     def fmt(a: str) -> str:
         return " ".join(w if w.upper() in ACRONYMS else w.lower() for w in a.split())
-    areas = [fmt(a) for a in areas if a][:2]
-    return " and ".join(areas)
+    areas = [fmt(a) for a in areas if a]
+    specific = [a for a in areas if a not in GENERIC_AREAS]
+    return " and ".join((specific or areas)[:2])
 
 
 def tidy_name(s: str) -> str:
@@ -143,14 +149,30 @@ def append_row(path: Path, cols: list[str], row: dict) -> None:
         w.writerow(row)
 
 
-def load_suppressed(state: Path, extra: list[Path]) -> set[str]:
-    emails: set[str] = set()
+class Suppressed(set):
+    """Emails never to contact. Rows like "@firm.com" block a whole domain (and its subdomains)."""
+    def __init__(self):
+        super().__init__()
+        self.domains: set[str] = set()
+
+    def add(self, e: str) -> None:
+        e = e.strip().lower().rstrip("/")
+        if e.startswith("@"):
+            self.domains.add(e[1:])
+        elif e:
+            super().add(e)
+
+    def __contains__(self, email) -> bool:
+        email = str(email).lower()
+        return super().__contains__(email) or domain_blocked(email, self.domains)
+
+
+def load_suppressed(state: Path, extra: list[Path]) -> Suppressed:
+    out = Suppressed()
     for p in [state / "suppression.csv", *extra]:
         for r in read_rows(p):
-            e = (r.get("email") or r.get("Email") or next(iter(r.values()), "") or "").strip().lower()
-            if e:
-                emails.add(e)
-    return emails
+            out.add(r.get("email") or r.get("Email") or next(iter(r.values()), "") or "")
+    return out
 
 
 def recently_emailed(state: Path, days: int) -> set[str]:
@@ -275,6 +297,9 @@ def cmd_prepare(a) -> int:
         if email in queued or email in seen:
             skip("already queued / duplicate"); continue
         areas = parse_areas(c["practice_areas"])
+        excluded = {x.strip().lower() for x in a.exclude_practice.split(",") if x.strip()}
+        if areas and areas[0].strip().lower() in excluded:
+            skip(f"main practice excluded ({areas[0].strip().lower()})"); continue
         if not areas and a.require_practice:
             skip("no practice area on record"); continue
         seen.add(email)
@@ -558,6 +583,9 @@ def main() -> int:
     p.add_argument("--subject", default="Your $practice_phrase at $firm")
     p.add_argument("--title-regex", default="", help="override which titles count as partner")
     p.add_argument("--require-practice", action="store_true", help="skip partners with no practice area on record")
+    p.add_argument("--exclude-practice", default=os.environ.get(
+        "OUTREACH_EXCLUDE_PRACTICE", "family law,personal injury,immigration"),
+        help="comma-separated practices; partners whose main (first-listed) practice is one of these are skipped")
     p.set_defaults(func=cmd_prepare)
 
     p = sub.add_parser("send", help="send queued emails up to the daily cap")
