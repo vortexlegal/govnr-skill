@@ -32,7 +32,7 @@ case "${1:-}" in
   save)
     cd "$STATE_REPO"; git add -A state
     if git diff --cached --quiet; then echo "nothing to save"; exit 0; fi
-    git -c user.name="Partner Outreach" -c user.email=jbroder@vortexlegal.com commit -qm "${2:-outreach run}"
+    git -c user.name=Claude -c user.email=noreply@anthropic.com commit -qm "${2:-outreach run}"
     for i in 1 2 3 4; do git push -q origin "$BRANCH" && break || sleep $((2**i)); done
     echo "saved: $(git log --oneline -1)" ;;
   *) sed -n '2,11p' "$0"; exit 1 ;;
