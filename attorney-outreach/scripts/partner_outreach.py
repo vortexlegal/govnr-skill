@@ -331,6 +331,33 @@ def to_html(body: str) -> str:
     return "".join("<p>" + "<br>".join(html.escape(l, quote=False) for l in p.splitlines()) + "</p>" for p in paras)
 
 
+def quoted_reply_html(followup_body: str, original: dict | None, sender_name: str, sender_email: str) -> str:
+    """Follow-up body with the first email quoted under it, Outlook-style, so a direct send reads as a reply."""
+    import html
+    out = to_html(followup_body)
+    if not original or not original.get("body"):
+        return out
+    try:
+        sent = datetime.fromisoformat(original["sent_at"]).astimezone(ET).strftime("%A, %B %-d, %Y %-I:%M %p")
+    except (KeyError, ValueError):
+        sent = ""
+    head = (f"<p><b>From:</b> {html.escape(sender_name, quote=False)} &lt;{html.escape(sender_email, quote=False)}&gt;<br>"
+            f"<b>Sent:</b> {sent}<br><b>To:</b> {html.escape(original.get('name') or original.get('to', ''), quote=False)}<br>"
+            f"<b>Subject:</b> {html.escape(original.get('subject', ''), quote=False)}</p>")
+    return out + "<hr>" + head + to_html(original["body"])
+
+
+def load_originals(state: Path) -> dict[str, dict]:
+    out = {}
+    p = state / "originals.jsonl"
+    if p.exists():
+        for line in p.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                r = json.loads(line)
+                out.setdefault(r["to"].lower(), r)
+    return out
+
+
 def render_body(tpl: Template, vals: dict, seed: str = "") -> str:
     body = tpl.safe_substitute(vals)
     body = spin(body, seed or vals.get("first_name", ""))
@@ -608,6 +635,7 @@ def cmd_send(a) -> int:
     # Follow-ups go first: at most one per person per day, on the `--followup-days` schedule
     # (days after the first email), and only while there's no reply.
     followups = []
+    originals = load_originals(state)
     fu_days = parse_followup_days(a.followup_days)
     if fu_days:
         templates = {n: Template((HERE / "templates" / f"partner_followup_{n}_email.txt").read_text(encoding="utf-8"))
@@ -631,7 +659,8 @@ def cmd_send(a) -> int:
             followups.append({"to": to, "name": r.get("name", ""), "firm": r.get("firm", ""),
                               "practice": practice, "kind": f"followup{step}", "original_subject": subj,
                               "original_sent_at": r["sent_at"],
-                              "subject": subj if subj.lower().startswith("re:") else f"RE: {subj}", "body": body})
+                              "subject": subj if subj.lower().startswith("re:") else f"RE: {subj}", "body": body,
+                              "body_html": quoted_reply_html(body, originals.get(to), a.sender_name, a.sender_email)})
     if followups and not a.sender_address:
         print("Refusing: follow-ups need --sender-address / OUTREACH_SENDER_ADDRESS.", file=sys.stderr)
         return 2
@@ -665,7 +694,7 @@ def cmd_send(a) -> int:
             # Follow-ups are sent as a reply in the original thread.
             batch.append({"kind": kind, "pause_seconds_before": random.randint(60, 300), **{k: row.get(k, "") for k in
                           ("to", "name", "firm", "practice", "subject", "body", "original_subject", "original_sent_at")},
-                          "body_html": to_html(row.get("body", ""))})
+                          "body_html": row.get("body_html") or to_html(row.get("body", ""))})
             if kind == "initial":
                 remaining.append(row)
             continue
@@ -726,6 +755,11 @@ def cmd_record(a) -> int:
             "kind": a.kind if a.status != "replied" else "", "practice": row.get("practice", "")})
         if a.kind == "initial" and a.status in ("sent", "skipped"):
             done.add(to)
+        if a.kind == "initial" and a.status == "sent" and row.get("body"):
+            with (state / "originals.jsonl").open("a", encoding="utf-8") as f:
+                f.write(json.dumps({"to": to, "name": row.get("name", ""), "subject": row.get("subject", ""),
+                                    "sent_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                    "body": row["body"]}) + "\n")
         print(f"{a.status:<7} {to}")
     write_rows(state / "queue.csv", QUEUE_COLS, [r for r in queue if r["to"].lower() not in done])
     return 0

@@ -138,6 +138,11 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertIn("stronger platform", fus[a]["body"])
         self.assertIn("123 Main St", fus[a]["body"])
         self.assertTrue(fus[a]["body"].startswith("Hi "))
+        # Sent directly (no draft): body_html carries the first email quoted underneath.
+        self.assertIn("<hr>", fus[a]["body_html"])
+        import html as _h
+        self.assertIn("<b>Subject:</b> " + _h.escape(first[0]["subject"], quote=False), fus[a]["body_html"])
+        self.assertIn(_h.escape(first[0]["body"].splitlines()[2][:40], quote=False), fus[a]["body_html"])
         run("record", "--state", str(self.state), "--kind", "followup1", a, b)
 
         self._age_log(1)                                   # day 6: follow-up 1 not repeated
