@@ -53,7 +53,7 @@ CONTACT_ALIASES["first_name"] += ["firstName", "candidate first name"]
 CONTACT_ALIASES["last_name"] += ["lastName", "candidate last name"]
 # Work email first: outreach goes to the firm address when there is one.
 CONTACT_ALIASES["email"] = ["work_email", "work email", "workemail", *CONTACT_ALIASES["email"],
-                            "personal_email", "personal email", "personalemail"]
+                            "personal_email", "personal email", "personalemail", "emails"]
 CONTACT_ALIASES["firm"] += ["current_company", "currentcompany", "current company", "current firm"]
 CONTACT_ALIASES["title"] += ["current_title", "currenttitle", "current title"]
 CONTACT_ALIASES["practice_areas"] += ["practiceareas", "specialty", "primary practice area"]
@@ -193,7 +193,9 @@ def cmd_prepare(a) -> int:
     new_rows, skipped, seen = [], [], set()
     for raw in read_csv(a.contacts):
         c = canon_contact(raw)
-        email = c["email"].strip().lower()
+        # A cell may hold several addresses ("a@x.com; b@y.com"): use the first valid one.
+        email = next((e for e in re.split(r"[\s,;|]+", c["email"].strip().lower())
+                      if re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", e)), c["email"].strip().lower())
         c["first_name"], c["last_name"], c["city"] = map(tidy_name, (c["first_name"], c["last_name"], c["city"]))
         name = f"{c['first_name']} {c['last_name']}".strip()
 
