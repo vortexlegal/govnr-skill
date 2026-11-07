@@ -209,7 +209,14 @@ class PartnerOutreachTest(unittest.TestCase):
         for bad in ["Just bumping my note from last week.", "Following up on my email.",
                     "I wanted to bring this to the top of your inbox.", "I wanted to bring this to the top of you're inbox.",
                     "Circling back on the below.", "Checking in on my last note.", "I reached out last month about roles.",
-                    "In case this got buried, a quick question."]:
+                    "In case this got buried, a quick question.",
+                    "Would you take a call? Just following up on the below.",
+                    "One question. Bringing this to the top of your inbox.",
+                    "Would you take a call? Wanted to bring this back up.",
+                    "A quick nudge on my earlier note.", "Per my last email, would you take a call?",
+                    "Resending in case you missed it."]:
+            with self.assertRaises(ValueError, msg=bad):
+                po.check_followup_opening(f"Hi Ann,\n\nA question first. {bad} More text here.\n")
             with self.assertRaises(ValueError, msg=bad):
                 po.check_followup_opening(f"Hi Ann,\n\n{bad} More text here.\n")
 

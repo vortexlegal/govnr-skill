@@ -321,9 +321,15 @@ def parse_followup_days(value: str) -> list[int]:
 # "bringing this to the top of your inbox", ...). Checked against the first sentence of the body.
 REMINDER_OPENER_RE = re.compile(
     r"\b(bump\w*|follow\w*[- ]?up|following|circl\w* back|check\w* in|touch\w* base|"
-    r"top of (?:your|you.re) inbox|resurfac\w*|got (?:lost|buried)|buried|reminder|remind\w*|"
-    r"my (?:last|previous|earlier|prior) (?:note|email|message)|reached out|wanted to (?:bring|make sure)|"
-    r"in case you missed|did you (?:get|see)|haven.t heard|any thoughts on)\b", re.I)
+    r"top of (?:your|you.re|the) inbox|(?:bring|brought|bringing|move|moving|put|putting) (?:this|it) (?:back )?(?:up|to the top)|"
+    r"resurfac\w*|re-?surfac\w*|got (?:lost|buried)|buried|slipped through|fell through|"
+    r"reminder|remind\w*|nudg\w*|ping\w*|re-?send\w*|re-?sent|"
+    r"my (?:last|previous|earlier|prior|other|first) (?:note|email|e-mail|message)|"
+    r"(?:last|previous|earlier|prior) (?:note|email|e-mail|message)|per my|as (?:i )?mentioned|"
+    r"reached out|reaching out again|wanted to (?:bring|make sure|loop)|loop\w* back|"
+    r"in case (?:you|it|this) (?:missed|got|was)|in case you|did you (?:get|see|have a chance)|"
+    r"haven.t heard|not heard back|any thoughts on|see below|below email|"
+    r"one more time|again about|still interested)\b", re.I)
 
 
 def opening_sentence(body: str) -> str:
@@ -333,10 +339,13 @@ def opening_sentence(body: str) -> str:
 
 
 def check_followup_opening(body: str) -> None:
-    first = opening_sentence(body)
-    m = REMINDER_OPENER_RE.search(first)
+    """Follow-ups never refer to the earlier email or nudge ("following up", "top of your inbox", ...),
+    anywhere in the message body (the signature is not checked)."""
+    text = body.split("Best regards")[0]
+    m = REMINDER_OPENER_RE.search(text)
     if m:
-        raise ValueError(f"Follow-up opens with a reminder phrase ({m.group(0)!r}): {first!r}")
+        raise ValueError(f"Follow-up contains a reminder phrase ({m.group(0)!r}): "
+                         f"{text[max(0, m.start() - 40):m.end() + 40]!r}")
 
 
 def due_followups(log: list[dict], days: list[int], now: datetime) -> list[tuple[int, dict]]:
