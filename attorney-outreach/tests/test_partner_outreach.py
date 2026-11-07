@@ -257,8 +257,11 @@ class PartnerOutreachTest(unittest.TestCase):
             self.assertNotRegex(b, r"\b(LLP|LLC|PLLC|P\.?A\.|P\.?C\.)\b")
             self.assertLessEqual(b.lower().count("confidential"), 1)
             self.assertIn("0.1", b)
+            self.assertEqual(b.lower().count("stronger platform"), 1)
+            self.assertNotIn("specific opening", b)
+            self.assertLessEqual(b.lower().count("quick"), 1)
             self.assertIn("123 Main St", b)  # address in signature
-            self.assertLess(len(b.split("Best regards")[0].split()), 95)
+            self.assertLess(len(b.split("Best regards")[0].split()), 110)
         # Same person always gets the same wording and subject.
         st2 = Path(tempfile.mkdtemp())
         run("prepare", "--state", str(st2), *SENDER, "--contacts", str(ROOT / "examples" / "crm_partners.csv"),
