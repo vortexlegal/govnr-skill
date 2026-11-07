@@ -53,6 +53,10 @@ python3 scripts/partner_outreach.py send --state ./partner-state \
   Stops after `--max-failures` failed sends.
 - **Failed sends:** they stay queued and are logged. They are never retried
   automatically in the same run.
+- **Follow-up:** one, 30 days after the first email (`--followup-days`, 0 turns it off),
+  only if there's no reply. It's sent as a reply in the same thread
+  (`templates/partner_followup_email.txt`). Follow-ups go out before new first emails
+  and count toward the daily cap and the per-firm limit.
 - **Each email:** plain text, with a `List-Unsubscribe` header, an unsubscribe line,
   and the mailing address. Tracking pixels and link rewriting are off.
 - **Schedule:** run `send` once each weekday morning, e.g. cron `5 10 * * 1-5`
@@ -98,7 +102,18 @@ State folder: `partner-state/` (keep it between runs).
 2. **Build the batch:** `set -a; . ./outreach.env; set +a` then
    `python3 scripts/partner_outreach.py send --state partner-state --suppress-file <dnu parts> --live`
    (default transport is Outlook). This writes `partner-state/outbox.json`.
-3. **For each email in outbox.json:**
+3. **Follow-ups (`"kind": "followup"` in outbox.json; listed first).** Each is due because
+   the first email went out 30+ days ago (`--followup-days`) with no recorded reply. One
+   follow-up per person, ever.
+   - Check for a reply first: `outlook_email_search` with `sender=<to>` and
+     `afterDateTime=<original_sent_at>`. If they wrote back, run
+     `record --status replied <to>` and don't send.
+   - Otherwise find the original in Sent Items (`recipient=<to>`, match `original_subject`),
+     then `outlook_create_reply_draft` on it with the follow-up `body` and
+     `outlook_send_draft`. This keeps it in the same thread. If the original can't be
+     found, send with `outlook_send_mail` using the `RE:` subject.
+   - Run `record --kind followup <to>` (or `--status failed`).
+4. **First emails (`"kind": "initial"`):**
    - Check Outlook for prior contact: `outlook_email_search` with `recipient=<to>`.
      If Jon has emailed this person in the last 180 days, run
      `record --status skipped --detail "prior Outlook contact" <to>` and move on.
@@ -106,5 +121,5 @@ State folder: `partner-state/` (keep it between runs).
      run `record <to>`. On an error, run `record --status failed --detail "<error>" <to>`
      and stop after 3 failures.
    - Pause ~20–60 seconds between sends.
-4. **Summarize:** sent / skipped / failed counts, unsubscribes processed, and
+5. **Summarize:** follow-ups and first emails sent / skipped / failed, unsubscribes processed, and
    interested replies.

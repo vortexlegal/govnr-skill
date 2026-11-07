@@ -20,7 +20,10 @@ def run(*args):
 
 
 def rows(p):
-    return list(csv.DictReader(open(p))) if p.exists() else []
+    if not p.exists():
+        return []
+    with open(p) as f:
+        return list(csv.DictReader(f))
 
 
 class PartnerOutreachTest(unittest.TestCase):
@@ -97,6 +100,48 @@ class PartnerOutreachTest(unittest.TestCase):
         # Cap counts Outlook sends: only 1 more allowed today.
         run("send", "--state", str(self.state), *SENDER, "--transport", "outlook", "--live", "--ignore-hours", "--daily-cap", "3")
         self.assertEqual(len(__import__("json").loads((self.state / "outbox.json").read_text())), 1)
+
+    def _age_log(self, days):
+        import datetime as dtm
+        log = rows(self.state / "sent_log.csv")
+        for r in log:
+            r["sent_at"] = (dtm.datetime.fromisoformat(r["sent_at"]) - dtm.timedelta(days=days)).isoformat()
+        po.write_rows(self.state / "sent_log.csv", po.LOG_COLS, log)
+
+    def _outlook_send(self, cap="40"):
+        run("send", "--state", str(self.state), *SENDER, "--transport", "outlook", "--live", "--ignore-hours",
+            "--daily-cap", cap, "--sender-address", "123 Main St")
+        return __import__("json").loads((self.state / "outbox.json").read_text())
+
+    def test_followup_after_30_days_once_and_not_after_reply(self):
+        first = self._outlook_send(cap="2")
+        self.assertTrue(all(b["kind"] == "initial" for b in first))
+        run("record", "--state", str(self.state), *[b["to"] for b in first])
+        # 29 days later: nothing due yet.
+        self._age_log(29)
+        self.assertFalse([b for b in self._outlook_send(cap="2") if b["kind"] == "followup"])
+        # Day 30: both due; one has replied in the meantime.
+        self._age_log(1)
+        run("record", "--state", str(self.state), "--status", "replied", first[1]["to"])
+        batch = self._outlook_send(cap="5")
+        fus = [b for b in batch if b["kind"] == "followup"]
+        self.assertEqual([b["to"] for b in fus], [first[0]["to"]])
+        self.assertTrue(fus[0]["subject"].startswith("RE: "))
+        self.assertEqual(fus[0]["original_subject"], first[0]["subject"])
+        self.assertIn("123 Main St", fus[0]["body"])
+        self.assertIn("won't follow up again", fus[0]["body"])
+        self.assertIn(first[0]["practice"].split(" and ")[0], fus[0]["body"])
+        self.assertEqual(batch[0]["kind"], "followup")  # follow-ups go first
+        # Recorded follow-up: never sent a second time.
+        run("record", "--state", str(self.state), "--kind", "followup", fus[0]["to"])
+        self.assertFalse([b for b in self._outlook_send(cap="5") if b["kind"] == "followup"])
+
+    def test_followup_skips_unsubscribed(self):
+        first = self._outlook_send(cap="1")
+        run("record", "--state", str(self.state), first[0]["to"])
+        self._age_log(31)
+        run("suppress", "--state", str(self.state), first[0]["to"])
+        self.assertFalse([b for b in self._outlook_send() if b["kind"] == "followup"])
 
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")

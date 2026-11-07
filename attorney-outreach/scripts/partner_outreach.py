@@ -74,7 +74,7 @@ NOT_PARTNER_RE = re.compile(
     r"legal assistant|secretary|business development|marketing|recruit\w*|staff)\b", re.I)
 
 QUEUE_COLS = ["contact_key", "to", "name", "firm", "title", "practice", "subject", "body", "prepared_at"]
-LOG_COLS = ["sent_at", "to", "name", "firm", "subject", "transport", "status", "detail"]
+LOG_COLS = ["sent_at", "to", "name", "firm", "subject", "transport", "status", "detail", "kind", "practice"]
 
 
 # ---------- helpers ----------
@@ -130,6 +130,11 @@ def write_rows(path: Path, cols: list[str], rows: list[dict]) -> None:
 
 
 def append_row(path: Path, cols: list[str], row: dict) -> None:
+    if path.exists():
+        with path.open(newline="", encoding="utf-8") as f:
+            header = next(csv.reader(f), [])
+        if header and header != cols:
+            write_rows(path, cols, read_rows(path))
     new = not path.exists()
     with path.open("a", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
@@ -167,6 +172,33 @@ def fix_subject(subject: str) -> str:
     return re.sub(r"I[’']m house roles", "In-house roles", subject, flags=re.I)
 
 
+def sender_signature(a) -> str:
+    contact = " | ".join(x for x in [a.sender_phone, a.sender_email] if x)
+    return "\n".join(x for x in [
+        a.sender_name, ", ".join(x for x in [a.sender_title, a.sender_company] if x), contact, a.sender_website] if x)
+
+
+def render_body(tpl: Template, vals: dict) -> str:
+    body = tpl.safe_substitute(vals)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(l.rstrip() for l in body.splitlines())).strip() + "\n"
+
+
+def due_followups(log: list[dict], days: int, now: datetime) -> list[dict]:
+    """People whose first email went out >= `days` ago, with no follow-up yet and no recorded reply."""
+    first: dict[str, dict] = {}
+    closed: set[str] = set()
+    for r in log:
+        to = (r.get("to") or "").lower()
+        kind = r.get("kind") or "initial"
+        if r.get("status") == "replied" or (kind == "followup" and r.get("status") in ("sent", "skipped")):
+            closed.add(to)
+        elif kind == "initial" and r.get("status") == "sent" and to not in first:
+            first[to] = r
+    cutoff = now - timedelta(days=days)
+    return [r for to, r in first.items()
+            if to not in closed and datetime.fromisoformat(r["sent_at"]) <= cutoff]
+
+
 # ---------- prepare ----------
 
 def cmd_prepare(a) -> int:
@@ -187,9 +219,7 @@ def cmd_prepare(a) -> int:
 
     body_tpl = Template(a.template.read_text(encoding="utf-8"))
     subj_tpl = Template(a.subject)
-    contact = " | ".join(x for x in [a.sender_phone, a.sender_email] if x)
-    signature = "\n".join(x for x in [
-        a.sender_name, ", ".join(x for x in [a.sender_title, a.sender_company] if x), contact, a.sender_website] if x)
+    signature = sender_signature(a)
 
     new_rows, skipped, seen = [], [], set()
     for raw in read_csv(a.contacts):
@@ -234,8 +264,7 @@ def cmd_prepare(a) -> int:
             "sender_signature": signature, "sender_address": a.sender_address,
             "unsubscribe_email": a.unsubscribe_email or a.sender_email,
         }
-        body = body_tpl.safe_substitute(vals)
-        body = re.sub(r"\n{3,}", "\n\n", "\n".join(l.rstrip() for l in body.splitlines())).strip() + "\n"
+        body = render_body(body_tpl, vals)
         subject = fix_subject(re.sub(r"\s+", " ", subj_tpl.safe_substitute(vals)).strip())
         new_rows.append({
             "contact_key": c["_raw"].get("id") or c["_raw"].get("contact_id") or email,
@@ -344,50 +373,86 @@ def cmd_send(a) -> int:
     remaining, attempted, sent, failed = [], 0, 0, 0
     transport = {"sendgrid": send_sendgrid, "smtp": send_smtp, "outlook": None}[a.transport]
     batch = []
-    limit = budget if a.live else min(a.daily_cap, len(queue))
+    limit = budget if a.live else a.daily_cap
 
-    for row in queue:
+    # Follow-ups go first: one per person, `--followup-days` after the first email, if no reply.
+    followups = []
+    if a.followup_days > 0:
+        fu_tpl = Template(a.followup_template.read_text(encoding="utf-8"))
+        for r in due_followups(log, a.followup_days, datetime.now(timezone.utc)):
+            to = r["to"].lower()
+            if to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS):
+                continue
+            practice = r.get("practice") or ""
+            body = render_body(fu_tpl, {
+                "first_name": (r.get("name") or "").split(" ")[0] or "there",
+                "practice_phrase": f"{practice} practice" if practice else "practice",
+                "firm": r.get("firm") or "your firm",
+                "sender_signature": sender_signature(a), "sender_address": a.sender_address,
+                "unsubscribe_email": a.unsubscribe_email or a.sender_email})
+            subj = r.get("subject") or ""
+            followups.append({"to": to, "name": r.get("name", ""), "firm": r.get("firm", ""),
+                              "practice": practice, "kind": "followup", "original_subject": subj,
+                              "original_sent_at": r["sent_at"],
+                              "subject": subj if subj.lower().startswith("re:") else f"RE: {subj}", "body": body})
+    if followups and not a.sender_address:
+        print("Refusing: follow-ups need --sender-address / OUTREACH_SENDER_ADDRESS.", file=sys.stderr)
+        return 2
+
+    for row in followups + queue:
         to = row["to"].lower()
-        if to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS) or to in recent:
+        kind = row.get("kind", "initial")
+        if kind == "initial" and (to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS) or to in recent):
             continue  # dropped from the queue for good
         fk = firm_key(row.get("firm"))
         if attempted >= limit or failed >= a.max_failures or (fk and firms_today.get(fk, 0) >= a.per_firm_daily):
-            remaining.append(row); continue
+            if kind == "initial":
+                remaining.append(row)
+            continue
         attempted += 1
         if fk:
             firms_today[fk] = firms_today.get(fk, 0) + 1
         row["subject"] = fix_subject(row["subject"])
         if not a.live:
-            print(f"[dry-run] would send to {row['name']} <{to}>: {row['subject']}")
-            remaining.append(row); continue
+            print(f"[dry-run] would send {kind} to {row['name']} <{to}>: {row['subject']}")
+            if kind == "initial":
+                remaining.append(row)
+            continue
         if a.transport == "outlook":
-            # Sent by the Outlook connector (outlook_send_mail); results come back via `record`.
-            batch.append({k: row[k] for k in ("to", "name", "firm", "subject", "body")})
-            remaining.append(row); continue
+            # Sent by the Outlook connector; results come back via `record`.
+            # Follow-ups are sent as a reply in the original thread.
+            batch.append({"kind": kind, **{k: row.get(k, "") for k in
+                          ("to", "name", "firm", "practice", "subject", "body", "original_subject", "original_sent_at")}})
+            if kind == "initial":
+                remaining.append(row)
+            continue
         ok, detail = transport(a, row)
         append_row(state / "sent_log.csv", LOG_COLS, {
             "sent_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "to": to, "name": row["name"],
             "firm": row["firm"], "subject": row["subject"], "transport": a.transport,
-            "status": "sent" if ok else "failed", "detail": detail})
+            "status": "sent" if ok else "failed", "detail": detail, "kind": kind, "practice": row.get("practice", "")})
         if ok:
             sent += 1; recent.add(to)
             print(f"sent   {row['name']} <{to}>")
         else:
             # Delivery outcome unknown or failed: keep it queued, never auto-retry in this run.
-            failed += 1; remaining.append(row)
+            failed += 1
+            if kind == "initial":
+                remaining.append(row)
             print(f"FAILED {row['name']} <{to}>: {detail}", file=sys.stderr)
         time.sleep(a.delay + random.uniform(0, a.delay))
 
     if a.transport == "outlook" and a.live:
         (state / "outbox.json").write_text(json.dumps(batch, indent=2))
-        print(f"OUTLOOK BATCH: {len(batch)} email(s) written to {state / 'outbox.json'} "
+        n_fu = sum(1 for b in batch if b["kind"] == "followup")
+        print(f"OUTLOOK BATCH: {len(batch)} email(s) ({n_fu} follow-up, {len(batch) - n_fu} first) written to {state / 'outbox.json'} "
               f"(sent today so far: {sent_today}/{a.daily_cap}). Send each with outlook_send_mail, "
               f"then log results with `record`.")
         return 0
     if a.live:
         write_rows(state / "queue.csv", QUEUE_COLS, remaining)
     mode = "LIVE" if a.live else "DRY RUN"
-    print(f"{mode}: {sent if a.live else attempted} {'sent' if a.live else 'would send'}, {failed} failed, "
+    print(f"{mode}: {len(followups)} follow-up(s) due. {sent if a.live else attempted} {'sent' if a.live else 'would send'}, {failed} failed, "
           f"{len(remaining)} still queued. Sent today: {sent_today + sent}/{a.daily_cap}.")
     if failed >= a.max_failures:
         print(f"Stopped after {failed} failures; check sender credentials before the next run.", file=sys.stderr)
@@ -400,15 +465,21 @@ def cmd_record(a) -> int:
     state: Path = a.state
     queue = read_rows(state / "queue.csv")
     by_to = {r["to"].lower(): r for r in queue}
+    last_sent = {r["to"].lower(): r for r in read_rows(state / "sent_log.csv") if r.get("status") == "sent"}
+    outbox = state / "outbox.json"
+    for b in (json.loads(outbox.read_text()) if outbox.exists() else []):
+        if b.get("kind") == a.kind:
+            by_to[b["to"].lower()] = b
     done = set()
     for to in a.emails:
         to = to.strip().lower()
-        row = by_to.get(to, {"to": to, "name": "", "firm": "", "subject": ""})
+        row = by_to.get(to) or last_sent.get(to) or {"to": to, "name": "", "firm": "", "subject": ""}
         append_row(state / "sent_log.csv", LOG_COLS, {
             "sent_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "to": to,
             "name": row.get("name", ""), "firm": row.get("firm", ""), "subject": row.get("subject", ""),
-            "transport": "outlook", "status": a.status, "detail": a.detail})
-        if a.status in ("sent", "skipped"):
+            "transport": "outlook", "status": a.status, "detail": a.detail,
+            "kind": a.kind if a.status != "replied" else "", "practice": row.get("practice", "")})
+        if a.kind == "initial" and a.status in ("sent", "skipped"):
             done.add(to)
         print(f"{a.status:<7} {to}")
     write_rows(state / "queue.csv", QUEUE_COLS, [r for r in queue if r["to"].lower() not in done])
@@ -442,16 +513,16 @@ def main() -> int:
         p.add_argument("--sender-name", default=os.environ.get("OUTREACH_SENDER_NAME", ""))
         p.add_argument("--sender-email", default=os.environ.get("OUTREACH_SENDER_EMAIL", ""))
         p.add_argument("--unsubscribe-email", default="", help="address for unsubscribe replies (default: sender)")
+        p.add_argument("--sender-title", default=os.environ.get("OUTREACH_SENDER_TITLE", ""))
+        p.add_argument("--sender-company", default=os.environ.get("OUTREACH_SENDER_COMPANY", ""))
+        p.add_argument("--sender-phone", default=os.environ.get("OUTREACH_SENDER_PHONE", ""))
+        p.add_argument("--sender-website", default=os.environ.get("OUTREACH_SENDER_WEBSITE", ""))
+        p.add_argument("--sender-address", default=os.environ.get("OUTREACH_SENDER_ADDRESS", ""),
+                       help="physical mailing address (CAN-SPAM)")
 
     p = sub.add_parser("prepare", help="build personalized emails for partners in a CRM export")
     common(p)
     p.add_argument("--contacts", type=Path, required=True)
-    p.add_argument("--sender-title", default=os.environ.get("OUTREACH_SENDER_TITLE", ""))
-    p.add_argument("--sender-company", default=os.environ.get("OUTREACH_SENDER_COMPANY", ""))
-    p.add_argument("--sender-phone", default=os.environ.get("OUTREACH_SENDER_PHONE", ""))
-    p.add_argument("--sender-website", default=os.environ.get("OUTREACH_SENDER_WEBSITE", ""))
-    p.add_argument("--sender-address", default=os.environ.get("OUTREACH_SENDER_ADDRESS", ""),
-                   help="physical mailing address (CAN-SPAM)")
     p.add_argument("--template", type=Path, default=HERE / "templates" / "partner_outreach_email.txt")
     p.add_argument("--subject", default="Your $practice_phrase at $firm")
     p.add_argument("--title-regex", default="", help="override which titles count as partner")
@@ -463,6 +534,9 @@ def main() -> int:
     p.add_argument("--transport", choices=["outlook", "sendgrid", "smtp"], default="outlook")
     p.add_argument("--reply-to", default="")
     p.add_argument("--daily-cap", type=int, default=40)
+    p.add_argument("--followup-days", type=int, default=int(os.environ.get("OUTREACH_FOLLOWUP_DAYS", "30")),
+                   help="send one follow-up this many days after the first email if no reply (0 = off)")
+    p.add_argument("--followup-template", type=Path, default=HERE / "templates" / "partner_followup_email.txt")
     p.add_argument("--per-firm-daily", type=int, default=1, help="max partners at the same firm per day")
     p.add_argument("--delay", type=float, default=20, help="base seconds between sends (plus random jitter)")
     p.add_argument("--start-hour", type=int, default=9)
@@ -474,8 +548,10 @@ def main() -> int:
 
     p = sub.add_parser("record", help="log sends done via the Outlook connector")
     p.add_argument("--state", type=Path, required=True)
-    p.add_argument("--status", choices=["sent", "failed", "skipped"], default="sent",
-                   help="skipped = not sent and removed from queue (e.g. already emailed per Outlook Sent Items)")
+    p.add_argument("--status", choices=["sent", "failed", "skipped", "replied"], default="sent",
+                   help="skipped = not sent and removed from queue (e.g. prior Outlook contact); "
+                        "replied = they answered, so no follow-up")
+    p.add_argument("--kind", choices=["initial", "followup"], default="initial")
     p.add_argument("--detail", default="")
     p.add_argument("emails", nargs="+")
     p.set_defaults(func=cmd_record)
