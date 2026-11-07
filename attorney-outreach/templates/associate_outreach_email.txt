@@ -1,6 +1,6 @@
 Hi $first_name,
 
-[[I am a legal recruiter with VortexLegal.||I am a legal recruiter with VortexLegal, and much of my work is with associates.||I am a legal recruiter with VortexLegal and work with associates at every level.]] [[Your $practice_desc at $firm stood out to me.||Your $practice_desc at $firm caught my eye.||I came across your $practice_desc at $firm.]]
+[[I am a legal recruiter with VortexLegal.||I am a legal recruiter with VortexLegal, and much of my work is with associates.||I am a legal recruiter with VortexLegal and work with associates at every level.]] $about_line
 
 [[Reading this should take less than a 0.1.||I'll keep this under a 0.1.]] [[The best associate roles rarely get posted online.||Most of the good associate searches never get posted.]]
 

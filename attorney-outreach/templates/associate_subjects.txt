@@ -1,5 +1,9 @@
-# One subject per line; $first_name, $practice_desc ("employment practice"), $practice_roles ("Employment associate roles"), $firm.
-Quick question, $first_name
-$practice_roles
-Your $practice_desc
-Question for you, $first_name
+# One subject per line. $first_name, $practice ("corporate"), $firm. A subject that needs $practice or
+# $firm is only used for people whose record has it. Keep under 50 characters.
+A clearer path to partner?
+$first_name, where do you want to be in 3 years?
+The associate moves nobody posts
+Better hours, same caliber of work
+Where $practice associates are moving
+More pay for your $practice work?
+$first_name, a quick career question

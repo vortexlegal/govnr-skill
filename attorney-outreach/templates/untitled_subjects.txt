@@ -1,4 +1,6 @@
-# One subject per line; $first_name only (no title or practice on record for this group).
-Quick question, $first_name
-Question for you, $first_name
-$first_name, a quick question
+# One subject per line. $first_name only (no title or practice is reliably on record for this group).
+$first_name, a quick career question
+The legal jobs nobody posts
+A stronger platform, better hours?
+$first_name, open to a quiet conversation?
+What a move could look like for you

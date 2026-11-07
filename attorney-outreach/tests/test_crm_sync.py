@@ -49,7 +49,7 @@ class CrmSyncTest(unittest.TestCase):
         self.srv = HTTPServer(("127.0.0.1", 0), Fake)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.srv.server_port}"
-        self.out = Path(tempfile.mkdtemp())
+        self.out = Path(tempfile.mkdtemp()) / "personal"
         Fake.calls = []
 
     def tearDown(self):
@@ -79,6 +79,12 @@ class CrmSyncTest(unittest.TestCase):
         self.assertIn("0 new candidate(s), 1 updated", out)
         self.assertEqual(rows(self.out / "untitled.csv"), [])
         self.assertEqual(len(rows(self.out / "candidates.csv")), 3)
+
+    def test_title_overrides(self):
+        (self.out.parent / "title_overrides.csv").write_text("email,title,company,source\nsam@gmail.com,Associate,Lee & Park LLP,notes\n")
+        self.run_sync()
+        self.assertEqual([r["id"] for r in rows(self.out / "titled.csv")], ["a1", "a2", "a3"])
+        self.assertTrue(rows(self.out / "titled.csv")[2]["title_source"].startswith("Reviewed"))
 
     def test_bad_key_stops(self):
         with self.assertRaises(SystemExit) as e:

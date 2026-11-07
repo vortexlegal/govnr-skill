@@ -16,6 +16,9 @@ it elsewhere. Standard library only.
 
   python3 crm_sync.py --out /home/user/vlcrm/crm/personal
   python3 crm_sync.py --out ... --full     # ignore the last-run time and pull everything
+
+Hand-confirmed titles in <out>/../title_overrides.csv (email,title,company,source) fill in a title the
+CRM doesn't have, every run.
 """
 from __future__ import annotations
 
@@ -109,11 +112,14 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", type=Path, required=True, help="folder for candidates.csv and the derived files")
     ap.add_argument("--base-url", default=os.environ.get("CRM_BASE_URL", ""))
+    ap.add_argument("--overrides", type=Path, default=None,
+                    help="CSV of hand-confirmed titles (email,title,company,source); default <out>/../title_overrides.csv")
     ap.add_argument("--full", action="store_true", help="pull everything, not just changes since the last run")
     a = ap.parse_args()
     if not a.base_url:
         ap.error("--base-url or CRM_BASE_URL is required")
     a.out.mkdir(parents=True, exist_ok=True)
+    a.overrides = a.overrides or a.out.parent / "title_overrides.csv"
     state_path = a.out / "sync_state.json"
     state = json.loads(state_path.read_text()) if state_path.exists() else {}
     since = None
@@ -133,6 +139,14 @@ def main() -> int:
             changed += 1
         master[row["id"]] = row
     rows = sorted(master.values(), key=lambda r: r["id"])
+    # Titles Jon or Claude confirmed by hand from the CRM notes (the export's own inference misses some).
+    overrides = {r["email"].strip().lower(): r for r in read(a.overrides) if r.get("email")}
+    for r in rows:
+        o = overrides.get(r["personal_email"].strip().lower())
+        if o and not r["current_title"].strip():
+            r["current_title"] = o.get("title", "").strip()
+            r["current_company"] = r["current_company"].strip() or o.get("company", "").strip()
+            r["title_source"] = "Reviewed: " + (o.get("source") or "title confirmed from CRM notes")
     write(a.out / "candidates.csv", COLS, rows)
     write(a.out / "titled.csv", COLS, [r for r in rows if r["current_title"].strip()])
     write(a.out / "untitled.csv", COLS, [r for r in rows if not r["current_title"].strip()])

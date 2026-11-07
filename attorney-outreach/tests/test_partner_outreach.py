@@ -503,6 +503,34 @@ class PersonalEmailTest(unittest.TestCase):
         self.assertEqual(batch(), ["p0@gmail.com", "p2@gmail.com", "p3@gmail.com"])  # placeholders aren't a firm
         self.assertEqual(len(batch("--per-firm-daily", "0")), 4)
 
+    def test_placeholder_firms_and_subject_fit(self):
+        for f in ["Independent Legal", "Law Offices", "Contract Attorney", "Legal Consultant", "Solo", "Attorney"]:
+            self.assertTrue(po.GENERIC_FIRM_RE.match(f), f)
+        for f in ["Kirkland", "Legal Aid Society", "Sophia Law Group, LLP"]:
+            self.assertFalse(po.GENERIC_FIRM_RE.match(f), f)
+        self.assertEqual(po.about_line("", "Independent Legal", "x"), "")
+        p = self.dir / "crm3.csv"
+        with open(p, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["first_name", "last_name", "personal_email", "current_title", "current_company", "practice_areas"])
+            for i in range(30):
+                w.writerow([f"Pat{i}", "Lee", f"pat{i}@gmail.com", "Partner", "Independent Legal", ""])
+        state = self.dir / "fit"
+        run("prepare", "--state", str(state), *SENDER, "--contacts", str(p), "--sender-address", "1 Main",
+            "--email-type", "personal")
+        for r in rows(state / "queue.csv"):
+            self.assertNotIn("Independent Legal", r["body"] + r["subject"])
+            self.assertNotIn("your firm", r["subject"].lower())
+            self.assertNotIn("$", r["subject"])
+            self.assertNotRegex(r["subject"], r"\bpartners are landing|your\s+book")
+
+    def test_firm_domains_ignore_copied_personal_and_school(self):
+        doms = po.firm_domains([], [{"personal_email": "ash@lsu.edu", "work_email": "ash@lsu.edu"},
+                                    {"personal_email": "bo@gmail.com", "work_email": "bo@bigfirm.com"},
+                                    {"personal_email": "cy@cyfamily.net", "work_email": "cy@cyfamily.net"},
+                                    {"personal_email": "di@gmail.com", "work_email": "di@columbia.edu"}])
+        self.assertEqual(doms, {"bigfirm.com"})
+
     def test_require_verified_needs_file(self):
         code, _ = self.prepare("--require-verified")
         self.assertEqual(code, 2)

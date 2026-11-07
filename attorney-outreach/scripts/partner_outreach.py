@@ -334,8 +334,13 @@ def spin(text: str, seed: str) -> str:
     return re.sub(r"\[\[(.+?)\]\]", pick, text, flags=re.S)
 
 
-GENERIC_FIRM_RE = re.compile(r"^(the )?(law (office|offices|firm|group)( of)?|attorneys? at law|private practice|"
-                             r"private legal|self[- ]employed|solo practi\w*|independent|freelance|na|n/a|none)$", re.I)
+# Employer values that describe how someone works rather than name a firm. Never written into an
+# email and never counted as one firm ("Independent Legal", "Law Offices", "Contract Attorney").
+GENERIC_FIRM_RE = re.compile(
+    r"^(the )?(law (office|offices|firm|group|practice)( of)?|attorneys? at law|private (practice|legal)|"
+    r"self[- ]employed|solo( practi\w*)?|independent|freelance|consultant|retired|unemployed|n/?a|none|"
+    r"(independent|freelance|contract|solo|private) (legal|attorney|lawyer|counsel|practitioner)( \w+)?|"
+    r"legal (consultant|consulting|services|counsel)|attorney|lawyer|legal|law)$", re.I)
 
 
 def about_line(practice: str, firm: str, seed: str) -> str:
@@ -343,7 +348,8 @@ def about_line(practice: str, firm: str, seed: str) -> str:
     if GENERIC_FIRM_RE.match((firm or "").strip(" .,")):
         firm = ""
     if practice and firm:
-        opts = [f"Your {practice} practice at {firm} stood out to me.", f"I came across your {practice} practice at {firm}."]
+        opts = [f"Your {practice} practice at {firm} stood out to me.", f"Your {practice} practice at {firm} caught my eye.",
+                f"I came across your {practice} practice at {firm}."]
     elif firm:
         opts = [f"I came across your work at {firm}.", f"Your work at {firm} caught my eye."]
     elif practice:
@@ -577,10 +583,14 @@ def firm_domains(paths: list[Path], contacts: list[dict]) -> set[str]:
     for rows in [contacts, *[read_rows(p) for p in paths]]:
         for r in rows:
             low = {k.strip().lower(): v for k, v in r.items() if k}
+            personal = set(split_emails(low.get("personal_email", "") or low.get("personal email", "")))
             for col in work_cols:
                 for e in split_emails(low.get(col, "")):
-                    if not is_freemail(e):
-                        out.add(domain(e))
+                    # Imports often copy the personal address into the work column; school and alumni
+                    # domains are never a firm's.
+                    if e in personal or is_freemail(e) or ACADEMIC_RE.search(domain(e)):
+                        continue
+                    out.add(domain(e))
     return out
 
 
@@ -739,7 +749,7 @@ def cmd_prepare(a) -> int:
         practice = plain_practice(areas)
         vals = {
             "first_name": c["first_name"] or "there",
-            "firm": short_firm(c["firm"]) or "your firm",
+            "firm": (short_firm(c["firm"]) if not GENERIC_FIRM_RE.match(short_firm(c["firm"]).strip(" .,")) else "") or "your firm",
             "title": c["title"],
             **practice_vars(practice, a.audience),
             "city_phrase": f" in {c['city']}" if c["city"] else "",
@@ -750,7 +760,10 @@ def cmd_prepare(a) -> int:
         }
         body = render_body(body_tpl, vals, seed=email)
         import hashlib
-        subj_tpl = Template(subjects[hashlib.sha256(("subject:" + email).encode()).digest()[0] % len(subjects)])
+        # Only subjects this person's record can fill: none that would print "practice" or "your firm".
+        fits = [t for t in subjects if (practice or "$practice" not in t) and (vals["firm"] != "your firm" or "$firm" not in t)]
+        fits = fits or [t for t in subjects if "$" not in t.replace("$first_name", "")] or subjects
+        subj_tpl = Template(fits[hashlib.sha256(("subject:" + email).encode()).digest()[0] % len(fits)])
         subject = fix_subject(re.sub(r"\s+", " ", subj_tpl.safe_substitute(vals)).strip())
         new_rows.append({
             "contact_key": c["_raw"].get("id") or c["_raw"].get("contact_id") or email,
