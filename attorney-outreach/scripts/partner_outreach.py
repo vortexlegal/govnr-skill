@@ -310,6 +310,14 @@ def practice_vars(practice: str) -> dict:
     }
 
 
+def to_html(body: str) -> str:
+    """Plain text -> minimal HTML Outlook won't reflow: one <p> per paragraph, <br> inside (signature).
+    No styles, images or tracking."""
+    import html
+    paras = [p for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
+    return "".join("<p>" + "<br>".join(html.escape(l) for l in p.splitlines()) + "</p>" for p in paras)
+
+
 def render_body(tpl: Template, vals: dict, seed: str = "") -> str:
     body = tpl.safe_substitute(vals)
     body = spin(body, seed or vals.get("first_name", ""))
@@ -630,7 +638,8 @@ def cmd_send(a) -> int:
             # Sent by the Outlook connector; results come back via `record`.
             # Follow-ups are sent as a reply in the original thread.
             batch.append({"kind": kind, "pause_seconds_before": random.randint(60, 300), **{k: row.get(k, "") for k in
-                          ("to", "name", "firm", "practice", "subject", "body", "original_subject", "original_sent_at")}})
+                          ("to", "name", "firm", "practice", "subject", "body", "original_subject", "original_sent_at")},
+                          "body_html": to_html(row.get("body", ""))})
             if kind == "initial":
                 remaining.append(row)
             continue

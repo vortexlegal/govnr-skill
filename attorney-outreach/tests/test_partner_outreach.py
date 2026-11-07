@@ -1,5 +1,5 @@
 """Run: python3 -m unittest discover -s tests  (from attorney-outreach/)"""
-import contextlib, csv, io, os, sys, tempfile, unittest
+import re, contextlib, csv, io, os, sys, tempfile, unittest
 from datetime import datetime
 from pathlib import Path
 from unittest import mock
@@ -282,6 +282,15 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertEqual(po.name_from_email("rlevy@offitkurman.com", "Levy"), "")
         self.assertEqual(po.name_from_email("info.dept@firm.com", "Levy"), "")
 
+    def test_paragraphs_and_html(self):
+        for r in rows(self.state / "queue.csv"):
+            core = r["body"].split("Best regards")[0]
+            paras = [p for p in core.split("\n\n") if p.strip()]
+            self.assertGreaterEqual(len(paras), 5)                       # greeting + 4 short paragraphs
+            self.assertTrue(all(len(re.split(r"(?<=[.?!])\s", p)) <= 2 for p in paras), paras)
+        html = po.to_html("Hi Ann,\n\nLine one. Two.\n\nBest regards,\nJon\nVortexLegal & Co <x>\n")
+        self.assertEqual(html, "<p>Hi Ann,</p><p>Line one. Two.</p><p>Best regards,<br>Jon<br>VortexLegal &amp; Co &lt;x&gt;</p>")
+
     def test_max_per_run(self):
         batch = __import__("json").loads("[]")
         run("send", "--state", str(self.state), *SENDER, "--transport", "outlook", "--live", "--ignore-hours",
@@ -289,6 +298,7 @@ class PartnerOutreachTest(unittest.TestCase):
         batch = __import__("json").loads((self.state / "outbox.json").read_text())
         self.assertEqual(len(batch), 2)
         self.assertTrue(all(60 <= b["pause_seconds_before"] <= 300 for b in batch))
+        self.assertTrue(all(b["body_html"].startswith("<p>Hi ") for b in batch))
 
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")

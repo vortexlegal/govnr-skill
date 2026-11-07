@@ -1,6 +1,10 @@
 Hi $first_name,
 
-[[If a move ever makes sense for your $practice_desc||If the timing is ever right to move your $practice_desc]], [[I'd be glad to be a sounding board||I'm happy to help you think it through]], whether the goal is a stronger platform, rate flexibility or more resources behind your clients. [[Just reply whenever it's useful.||Reply any time.]] [[If I don't hear back, I'll take it as a polite "not now" and won't reach out again. No motion to compel.||If I don't hear back, I'll read that as a polite "not now" and leave it there. No motion to compel.]]
+[[If a move ever makes sense for your $practice_desc||If the timing is ever right to move your $practice_desc]], [[I'd be glad to be a sounding board||I'm happy to help you think it through]], whether the goal is a stronger platform, rate flexibility or more resources behind your clients.
+
+[[Just reply whenever it's useful.||Reply any time.]]
+
+[[If I don't hear back, I'll take it as a polite "not now" and won't reach out again. No motion to compel.||If I don't hear back, I'll read that as a polite "not now" and leave it there. No motion to compel.]]
 
 Best regards,
 $sender_signature
