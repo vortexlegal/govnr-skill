@@ -129,10 +129,19 @@ Same drip as above (first email, then follow-ups at day 5 and 30 if no reply), s
    ```
    `--export-emails` only writes the addresses; nothing is queued. `--other-state` skips anyone already
    emailed or queued in the work-email campaign (matched by name + firm), so no one gets both.
-2. **Verify:** upload `to_verify.csv` to an email verifier (ZeroBounce, NeverBounce, Kickbox...) and
-   download the results CSV (needs `email` + `status`/`result` columns).
+2. **Verify with EmailListVerify:**
+   ```bash
+   python3 scripts/partner_outreach.py verify --input to_verify.csv --output elv_results.csv
+   ```
+   One API call (one credit) per address. The API key is injected by the session's network proxy
+   for api.emaillistverify.com (nothing to set; `EMAILLISTVERIFY_API_KEY` overrides it locally).
+   Results are appended as they come in, so an interrupted run resumes without re-spending
+   credits; `--limit N` checks a slice. Stops on a bad key or `error_credit`. Only `ok` counts as
+   valid: `ok_for_all` (catch-all), `unknown`, `antispam_system`, `email_disabled`, `dead_server`,
+   `invalid_mx`, `disposable` and `spamtrap` are all skipped. A results CSV from another verifier
+   (email + status columns) also works.
 3. **Queue verified only:** run the same `prepare` again without `--export-emails`, adding
-   `--verified-file results.csv --require-verified`. Only `valid`/`deliverable` addresses are queued;
+   `--verified-file elv_results.csv --require-verified`. Only `valid`/`deliverable` addresses are queued;
    invalid, catch-all, unknown, risky and unchecked addresses are skipped with the verifier's status
    as the reason. `--require-verified` refuses to run without a results file.
 4. **Send:** `send --state partner-state-personal ...` exactly as in the main workflow. Show the user

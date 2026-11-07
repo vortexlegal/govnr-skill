@@ -34,6 +34,7 @@ import ssl
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -623,6 +624,65 @@ def cmd_prepare(a) -> int:
     return 0
 
 
+# ---------- verify (EmailListVerify) ----------
+
+ELV_URL = "https://api.emaillistverify.com/api/verifyEmail"
+
+
+def elv_check(email: str, key: str, timeout: float = 60) -> str:
+    """One address -> EmailListVerify status ("ok", "ok_for_all", "email_disabled", ...).
+    Only "ok" is a verified-valid mailbox; ok_for_all is a catch-all domain and is not."""
+    url = ELV_URL + "?" + urllib.parse.urlencode({"email": email})
+    req = urllib.request.Request(url, headers={"x-api-key": key, "User-Agent": "attorney-outreach"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read().decode("utf-8", "replace").strip().strip('"').lower()
+
+
+def cmd_verify(a) -> int:
+    """Verify every address in --input; results append to --output (email,status,checked_at).
+    Re-runs skip addresses already in --output, so an interrupted run resumes without re-spending credits."""
+    key = os.environ.get("EMAILLISTVERIFY_API_KEY") or "proxy-injected"
+    done = {r["email"].lower() for r in read_rows(a.output) if r.get("email")}
+    todo, seen = [], set()
+    for r in read_rows(a.input):
+        e = (r.get("email") or r.get("Email") or "").strip().lower()
+        if e and e not in done and e not in seen:
+            seen.add(e); todo.append(e)
+    if a.limit:
+        todo = todo[:a.limit]
+    print(f"Verifying {len(todo)} address(es); {len(done)} already checked.")
+    counts: dict[str, int] = {}
+    errors = 0
+    for i, e in enumerate(todo, 1):
+        try:
+            status = elv_check(e, key)
+        except urllib.error.HTTPError as ex:
+            if ex.code in (401, 403):
+                print(f"Stopping: EmailListVerify refused the API key ({ex.code}).", file=sys.stderr)
+                return 2
+            status, errors = "", errors + 1
+        except (urllib.error.URLError, TimeoutError) as ex:
+            status, errors = "", errors + 1
+            print(f"  error {e}: {ex}", file=sys.stderr)
+        if status == "error_credit":
+            print("Stopping: out of EmailListVerify credits.", file=sys.stderr)
+            return 2
+        if status:
+            append_row(a.output, ["email", "status", "checked_at"],
+                       {"email": e, "status": status,
+                        "checked_at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+            counts[status] = counts.get(status, 0) + 1
+        if errors >= a.max_errors:
+            print(f"Stopping after {errors} request errors; re-run to resume.", file=sys.stderr)
+            break
+        if i % 100 == 0:
+            print(f"  {i}/{len(todo)}")
+        time.sleep(a.pause)
+    for st, n in sorted(counts.items(), key=lambda x: -x[1]):
+        print(f"  {n:>5}  {st}{'  (valid)' if st in VALID_STATUSES else ''}")
+    return 0
+
+
 # ---------- send ----------
 
 def send_sendgrid(a, row) -> tuple[bool, str]:
@@ -947,6 +1007,14 @@ def main() -> int:
                    help="also write the candidate addresses (after all other filters) to this CSV, "
                         "to upload to the verifier")
     p.set_defaults(func=cmd_prepare)
+
+    p = sub.add_parser("verify", help="check addresses with EmailListVerify before queuing them")
+    p.add_argument("--input", type=Path, required=True, help="CSV with an email column (from prepare --export-emails)")
+    p.add_argument("--output", type=Path, required=True, help="results CSV; pass it to prepare --verified-file")
+    p.add_argument("--limit", type=int, default=0, help="check at most N addresses this run")
+    p.add_argument("--pause", type=float, default=0.2, help="seconds between requests")
+    p.add_argument("--max-errors", type=int, default=10)
+    p.set_defaults(func=cmd_verify)
 
     p = sub.add_parser("send", help="send queued emails up to the daily cap")
     common(p)

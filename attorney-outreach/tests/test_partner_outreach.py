@@ -396,6 +396,23 @@ class PersonalEmailTest(unittest.TestCase):
         self.assertIn("catch-all", reasons["ana@ruizfamily.net"])
         self.assertEqual(reasons["Lee Park"], "no personal email on record")
 
+    def test_verify_resumes_and_feeds_prepare(self):
+        src = self.dir / "to_verify.csv"
+        self.prepare("--export-emails", str(src))
+        res = self.dir / "elv.csv"
+        answers = {"dana.w@gmail.com": "ok", "marc@gmail.com": "email_disabled",
+                   "ana@ruizfamily.net": "ok_for_all", "kim.ng@yahoo.com": "ok"}
+        calls = []
+        def fake(e, key, timeout=60):
+            calls.append(e); return answers[e]
+        with mock.patch.object(po, "elv_check", fake), mock.patch.object(po.time, "sleep"):
+            self.assertEqual(run("verify", "--input", str(src), "--output", str(res), "--limit", "2")[0], 0)
+            self.assertEqual(run("verify", "--input", str(src), "--output", str(res))[0], 0)
+        self.assertEqual(len(calls), 4)  # second run only checked the remaining two
+        self.prepare("--verified-file", str(res), "--require-verified")
+        self.assertEqual(sorted(r["to"] for r in rows(self.state / "queue.csv")),
+                         ["dana.w@gmail.com", "kim.ng@yahoo.com"])
+
     def test_require_verified_needs_file(self):
         code, _ = self.prepare("--require-verified")
         self.assertEqual(code, 2)
