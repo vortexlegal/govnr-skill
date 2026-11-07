@@ -55,7 +55,7 @@ python3 scripts/partner_outreach.py send --state ./partner-state \
   automatically in the same run.
 - **Follow-ups:** two, counted from the first email: day 5 and day 30
   (`--followup-days 5,30`, 0 turns them off). Each one goes only if there's no reply, and
-  is sent as a reply in the same thread (`templates/partner_followup_1_email.txt`,
+  is sent directly as an RE: reply with the first email quoted underneath (`templates/partner_followup_1_email.txt`,
   `templates/partner_followup_2_email.txt`). Follow-up 2 always comes at least 25 days
   after follow-up 1. Follow-ups go out before new first emails and count toward the daily
   cap and the per-firm limit. Nothing is sent after follow-up 2.
@@ -139,10 +139,8 @@ State folder: `partner-state/` (keep it between runs).
    - Check for a reply first: `outlook_email_search` with `sender=<to>` and
      `afterDateTime=<original_sent_at>`. If they wrote back, run
      `record --status replied <to>` and don't send.
-   - Otherwise find the original in Sent Items (`recipient=<to>`, match `original_subject`),
-     then `outlook_create_reply_draft` on it with the follow-up `body` and
-     `outlook_send_draft`. This keeps it in the same thread. If the original can't be
-     found, send with `outlook_send_mail` using the `RE:` subject.
+   - Otherwise send it directly with `outlook_send_mail` (subject already starts with `RE:`,
+     `body_html` already quotes the first email underneath). Never create drafts.
    - Run `record --kind <kind> <to>`, e.g. `--kind followup1` (or `--status failed`).
 4. **First emails (`"kind": "initial"`):**
    - Check Outlook for prior contact: `outlook_email_search` with `recipient=<to>`.
