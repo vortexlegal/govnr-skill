@@ -93,6 +93,11 @@ repeat emails.
 - **First names:** initials-only names ("K C") use the first name from a first.last email
   address. If there isn't one, that partner is skipped.
 
+### Standing exclusions
+- `VLCRM/crm/exclude_*.csv` are permanent do-not-email lists, applied on every run (e.g.
+  `exclude_ny_managing_partners.csv`: Jon asked that the NY managing partners list never be emailed).
+  Pass them as `--suppress-file` to `prepare` too when rebuilding the queue.
+
 ### Rules
 - **No reminder language in follow-ups, anywhere in the body:** no "following up",
   "bringing this to the top of your inbox", "circling back", "checking in", "bumping",
@@ -117,7 +122,7 @@ email per match for review. See its `--help` and `examples/positions.csv`.
 ## Daily Outlook run (what the scheduled task does each weekday)
 
 Sender settings live in `outreach.env` (Jonathan Broder, jbroder@vortexlegal.com,
-330 S. Pineapple Ave., Sarasota, FL 34236, cap 40/day, 1 partner per firm per day).
+330 S. Pineapple Ave., Sarasota, FL 34236, cap 250/day including follow-ups, 1 partner per firm per day).
 State folder: `partner-state/` (keep it between runs).
 
 1. **Process replies first.** Search the Outlook Inbox for replies since the last run
