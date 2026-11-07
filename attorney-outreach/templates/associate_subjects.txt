@@ -1,0 +1,5 @@
+# One subject per line; $first_name, $practice_desc ("employment practice"), $practice_roles ("Employment associate roles"), $firm.
+Quick question, $first_name
+$practice_roles
+Your $practice_desc
+Question for you, $first_name

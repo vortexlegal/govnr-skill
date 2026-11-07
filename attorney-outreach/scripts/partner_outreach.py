@@ -106,6 +106,24 @@ def is_partner(title: str, pattern: re.Pattern = PARTNER_RE) -> bool:
     return bool(title) and bool(pattern.search(title)) and not NOT_PARTNER_RE.search(title)
 
 
+# Law-firm associates. In-house titles ("Associate General Counsel"), summer associates (students),
+# "Associate Partner" and non-attorney "associate" titles are not included.
+ASSOCIATE_RE = re.compile(r"\b(associate|associate attorney)\b", re.I)
+NOT_ASSOCIATE_RE = re.compile(
+    r"\b(associate (partner|general counsel|director|dean|professor|editor|broker|attorney general|"
+    r"vice president|counsel to)|summer associate|sales associate|paralegal|legal assistant|"
+    r"recruit\w*|marketing|business development|staff|admin\w*|assistant|in-house)\b", re.I)
+
+
+def is_associate(title: str) -> bool:
+    return bool(title) and bool(ASSOCIATE_RE.search(title)) and not NOT_ASSOCIATE_RE.search(title)
+
+
+def audience_template(audience: str, name: str) -> Path:
+    """templates/<audience>_<name>, e.g. associate_outreach_email.txt (partner_ for partners)."""
+    return HERE / "templates" / f"{audience}_{name}"
+
+
 ACRONYMS = {"M&A", "IP", "ERISA", "ESG", "HIPAA", "GDPR", "CCPA", "SEC", "FCPA", "ADR", "REIT", "PE", "VC",
             "FDA", "FCC", "FERC", "IPO", "ITC", "PTAB", "ADA", "FINRA", "CFIUS", "UCC", "EB-5", "NLRB", "OSHA"}
 
@@ -316,11 +334,12 @@ def spin(text: str, seed: str) -> str:
     return re.sub(r"\[\[(.+?)\]\]", pick, text, flags=re.S)
 
 
-def practice_vars(practice: str) -> dict:
+def practice_vars(practice: str, audience: str = "partner") -> dict:
     return {
         "practice": practice,
         "practice_desc": f"{practice} practice" if practice else "practice",
-        "practice_roles": f"{practice[0].upper() + practice[1:]} partner roles" if practice else "Partner roles",
+        "practice_roles": (f"{practice[0].upper() + practice[1:]} {audience} roles" if practice
+                           else f"{audience.capitalize()} roles"),
     }
 
 
@@ -519,6 +538,8 @@ def cmd_prepare(a) -> int:
         return 2
 
     pattern = re.compile(a.title_regex, re.I) if a.title_regex else PARTNER_RE
+    a.template = a.template or audience_template(a.audience, "outreach_email.txt")
+    a.subjects = a.subjects or audience_template(a.audience, "subjects.txt")
     suppressed = load_suppressed(state, a.suppress_file)
     recent = recently_emailed(state, a.recontact_days)
     queued = {r["to"].lower() for r in read_rows(state / "queue.csv")}
@@ -549,16 +570,15 @@ def cmd_prepare(a) -> int:
         def skip(reason):
             skipped.append({"name": name, "email": email, "title": c["title"], "reason": reason})
 
-        if not is_partner(c["title"], pattern):
+        if a.audience == "associate" and not a.title_regex:
+            if not is_associate(c["title"]):
+                skip("not an associate title"); continue
+        elif not is_partner(c["title"], pattern):
             skip("not a partner title"); continue
         if is_leadership(c["title"]):
             skip("firm leadership title (managing/founding partner, CEO, president...)"); continue
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
             skip("no personal email on record" if a.email_type == "personal" else "missing/invalid email"); continue
-        if a.require_verified and not a.export_emails and verified.get(email) not in VALID_STATUSES:
-            skip(f"email not verified valid ({verified.get(email) or 'not in verifier results'})"); continue
-        if other_people and (name.lower(), short_firm(c["firm"]).lower()) in other_people:
-            skip("already contacted in another campaign"); continue
         if truthy(c["do_not_contact"]):
             skip("DNU / opted out in CRM"); continue
         if email in suppressed:
@@ -580,6 +600,10 @@ def cmd_prepare(a) -> int:
             skip(f"main practice excluded ({areas[0].strip().lower()})"); continue
         if not areas and a.require_practice:
             skip("no practice area on record"); continue
+        if other_people and (name.lower(), short_firm(c["firm"]).lower()) in other_people:
+            skip("already contacted in another campaign"); continue
+        if a.require_verified and not a.export_emails and verified.get(email) not in VALID_STATUSES:
+            skip(f"email not verified valid ({verified.get(email) or 'not in verifier results'})"); continue
         seen.add(email)
 
         practice = plain_practice(areas)
@@ -587,7 +611,7 @@ def cmd_prepare(a) -> int:
             "first_name": c["first_name"] or "there",
             "firm": short_firm(c["firm"]) or "your firm",
             "title": c["title"],
-            **practice_vars(practice),
+            **practice_vars(practice, a.audience),
             "city_phrase": f" in {c['city']}" if c["city"] else "",
             "sender_name": a.sender_name, "sender_company": a.sender_company,
             "sender_signature": signature, "sender_address": a.sender_address,
@@ -604,6 +628,7 @@ def cmd_prepare(a) -> int:
             "prepared_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         })
 
+    write_rows(state / "prepare_skipped.csv", ["name", "email", "title", "reason"], skipped)
     if a.export_emails:
         # Export-only pass: hand these to the verifier; nothing is queued.
         write_rows(a.export_emails, ["email", "name", "firm"],
@@ -612,11 +637,10 @@ def cmd_prepare(a) -> int:
               f"Skipped {len(skipped)}.")
         return 0
     write_rows(state / "queue.csv", QUEUE_COLS, read_rows(state / "queue.csv") + new_rows)
-    write_rows(state / "prepare_skipped.csv", ["name", "email", "title", "reason"], skipped)
     reasons: dict[str, int] = {}
     for s in skipped:
         reasons[s["reason"]] = reasons.get(s["reason"], 0) + 1
-    print(f"Queued {len(new_rows)} partner(s); skipped {len(skipped)}.")
+    print(f"Queued {len(new_rows)} {a.audience}(s); skipped {len(skipped)}.")
     for r, n in sorted(reasons.items(), key=lambda x: -x[1]):
         print(f"  skip {n:>5}  {r}")
     if new_rows:
@@ -784,7 +808,7 @@ def cmd_send(a) -> int:
     originals = load_originals(state)
     fu_days = parse_followup_days(a.followup_days)
     if fu_days:
-        templates = {n: Template((HERE / "templates" / f"partner_followup_{n}_email.txt").read_text(encoding="utf-8"))
+        templates = {n: Template(audience_template(a.audience, f"followup_{n}_email.txt").read_text(encoding="utf-8"))
                      for n in range(1, len(fu_days) + 1)}
         for step, r in due_followups(log, fu_days, datetime.now(timezone.utc)):
             fu_tpl = templates[step]
@@ -795,7 +819,7 @@ def cmd_send(a) -> int:
             practice = r.get("practice") or ""
             body = render_body(fu_tpl, {
                 "first_name": (r.get("name") or "").split(" ")[0] or "there",
-                **practice_vars(practice),
+                **practice_vars(practice, a.audience),
                 "practice_work": f"{practice} work" if practice else "your practice",
                 "firm": r.get("firm") or "your firm",
                 "sender_signature": sender_signature(a), "sender_address": a.sender_address,
@@ -985,8 +1009,11 @@ def main() -> int:
     p = sub.add_parser("prepare", help="build personalized emails for partners in a CRM export")
     common(p)
     p.add_argument("--contacts", type=Path, required=True)
-    p.add_argument("--template", type=Path, default=HERE / "templates" / "partner_outreach_email.txt")
-    p.add_argument("--subjects", type=Path, default=HERE / "templates" / "partner_subjects.txt",
+    p.add_argument("--audience", choices=["partner", "associate"], default="partner",
+                   help="who this campaign is for: picks the title filter and templates/<audience>_*.txt")
+    p.add_argument("--template", type=Path, default=None,
+                   help="default templates/<audience>_outreach_email.txt")
+    p.add_argument("--subjects", type=Path, default=None,
                    help="one subject per line; each person gets one, picked the same way every time")
     p.add_argument("--title-regex", default="", help="override which titles count as partner")
     p.add_argument("--require-practice", action="store_true", help="skip partners with no practice area on record")
@@ -1019,6 +1046,8 @@ def main() -> int:
     p = sub.add_parser("send", help="send queued emails up to the daily cap")
     common(p)
     p.add_argument("--transport", choices=["outlook", "sendgrid", "smtp"], default="outlook")
+    p.add_argument("--audience", choices=["partner", "associate"], default="partner",
+                   help="must match the prepare run: picks templates/<audience>_followup_<n>_email.txt")
     p.add_argument("--reply-to", default="")
     p.add_argument("--daily-cap", type=int, default=int(os.environ.get("OUTREACH_DAILY_CAP", "40")))
     p.add_argument("--max-per-run", type=int, default=int(os.environ.get("OUTREACH_MAX_PER_RUN", "10")),

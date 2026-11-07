@@ -413,6 +413,24 @@ class PersonalEmailTest(unittest.TestCase):
         self.assertEqual(sorted(r["to"] for r in rows(self.state / "queue.csv")),
                          ["dana.w@gmail.com", "kim.ng@yahoo.com"])
 
+    def test_associates(self):
+        for title in ["Associate", "Senior Associate", "Associate Attorney", "Litigation Associate"]:
+            self.assertTrue(po.is_associate(title), title)
+        for title in ["Associate General Counsel", "Summer Associate", "Associate Partner", "Partner",
+                      "Associate Director of Marketing", "Paralegal"]:
+            self.assertFalse(po.is_associate(title), title)
+        with open(self.contacts, "a", newline="") as f:
+            csv.writer(f).writerow(["Rae", "Fox", "rae@fox.com", "rae.fox@gmail.com", "Fox LLP",
+                                    "Senior Associate", "Tax"])
+        state = self.dir / "assoc"
+        code, out = run("prepare", "--state", str(state), *SENDER, "--contacts", str(self.contacts),
+                        "--sender-address", "123 Main St", "--email-type", "personal", "--audience", "associate")
+        self.assertEqual(code, 0)
+        q = rows(state / "queue.csv")
+        self.assertEqual([r["to"] for r in q], ["rae.fox@gmail.com"])
+        self.assertNotIn("portable", q[0]["body"])
+        self.assertIn("associate", q[0]["body"])
+
     def test_require_verified_needs_file(self):
         code, _ = self.prepare("--require-verified")
         self.assertEqual(code, 2)

@@ -115,6 +115,15 @@ repeat emails.
 
 ## Personal-email campaign (verified addresses only)
 
+**Partners and associates.** Run one campaign per audience, each with its own state folder:
+`--audience partner` (default) or `--audience associate`, passed to both `prepare` and `send`.
+Associates use `templates/associate_*.txt` (partnership track, hours, pay; no "portable book"
+wording). Associate titles: Associate, Senior Associate, Associate Attorney, "<practice> Associate".
+Not included: Associate General Counsel and other in-house titles, Summer Associates, Associate
+Partner, non-attorney "associate" titles. Point each campaign's `--other-state` at the other
+campaigns' folders (and the work-email `state/`) so no one is emailed twice. State folders in VLCRM:
+`state-personal-partner/`, `state-personal-associate/`; verifier results: `crm/verified/`.
+
 Same drip as above (first email, then follow-ups at day 5 and 30 if no reply), sent to partners'
 **personal** addresses instead of their firm address. Keep it in its own state folder.
 
