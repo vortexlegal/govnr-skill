@@ -486,6 +486,10 @@ class PersonalEmailTest(unittest.TestCase):
         self.assertEqual([r["to"] for r in rows(other / "queue.csv")], ["x@y.com"])
         self.assertEqual([r["to"] for r in rows(other / "moved_to_other_campaign.csv")], ["kim@ng.com"])
 
+    def test_no_like_yours_anywhere(self):
+        for f in (ROOT / "templates").glob("*.txt"):
+            self.assertNotIn("like yours", f.read_text().lower(), f.name)
+
     def test_require_verified_needs_file(self):
         code, _ = self.prepare("--require-verified")
         self.assertEqual(code, 2)

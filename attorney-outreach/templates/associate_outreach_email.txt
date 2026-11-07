@@ -4,9 +4,9 @@ Hi $first_name,
 
 [[Reading this should take less than a 0.1.||I'll keep this under a 0.1.]] [[The best associate roles rarely get posted online.||Most of the good associate searches never get posted.]]
 
-[[The firms I work with hire associates in practices like yours, and some offer a clearer path to partnership, better hours or higher pay.||My clients regularly add associates with your background, and some offer a clearer partnership track, better hours or higher pay.]]
+[[The firms I work with hire associates in your practice area, and some offer a clearer path to partnership, better hours or higher pay.||My clients regularly add associates with your background, and some offer a clearer partnership track, better hours or higher pay.]]
 
-[[Would you be open to hearing about roles like yours?||Would you be open to a confidential call about roles like yours?||Worth a quick conversation?]]
+[[Would you be open to hearing what's out there?||Would you be open to a quick, confidential call?||Worth a quick conversation?]]
 
 [[Let me know if you're interested or would like to learn more!||Let me know if you'd like to learn more!||If you're interested or want to learn more, just let me know!]]
 

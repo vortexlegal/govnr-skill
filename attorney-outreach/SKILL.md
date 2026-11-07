@@ -104,6 +104,7 @@ repeat emails.
   "nudge", "in case you missed it", "per my last email", "resending" or "my earlier note".
   Each follow-up stands on its own as a fresh question. `send` refuses any follow-up that
   contains one of these phrases.
+- **Never "like yours":** no template says "roles like yours" (or any "... like yours"); a test enforces it.
 - **Truthful:** never claim a specific opening, a referral, or a prior relationship.
   The template only asks whether they're open to similar roles.
 - **Opt-outs:** the emails don't carry an opt-out sentence (Jon's choice). Anyone who replies
