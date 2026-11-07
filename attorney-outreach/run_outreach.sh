@@ -3,7 +3,7 @@
 # vortexlegal/VLCRM repo, branch partner-outreach-state; this script keeps it in sync.
 #
 #   run_outreach.sh preview [N]      show the next N sends (default 40); changes nothing
-#   run_outreach.sh batch            write this run's batch to state/outbox.json (up to 10)
+#   run_outreach.sh batch            write this run's batch to state/outbox.json (up to OUTREACH_MAX_PER_RUN)
 #   run_outreach.sh record [args]    log results, e.g. `record a@x.com` or `record --kind followup1 a@x.com`
 #   run_outreach.sh suppress EMAIL.. add opt-outs
 #   run_outreach.sh save "message"   commit and push the state
