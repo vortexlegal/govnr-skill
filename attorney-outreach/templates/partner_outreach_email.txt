@@ -1,13 +1,10 @@
 Hi $first_name,
 
-I'm $sender_name with $sender_company. I work with partners considering lateral moves, and your $practice_phrase at $firm caught my attention.
+[[I am a legal recruiter with VortexLegal, and I work with partners on lateral moves.||I am a legal recruiter with VortexLegal and spend most of my time with partners weighing a move.||I am a legal recruiter with VortexLegal, focused on partner moves.]] [[Your $practice_desc at $firm stood out to me.||Your $practice_desc at $firm caught my eye.||I came across your $practice_desc at $firm.]]
 
-I'm not writing about one specific opening. I'd like to know whether you'd be open to hearing, confidentially, about partner roles similar to what you do now, on a stronger platform. I work with firms that have great reputations, deep resources and rate flexibility when a practice needs it. If you're open to it, a one-line reply is plenty, and I'll only bring you opportunities that are a genuine fit.
+[[I'm not reaching out about a specific opening.||This isn't about one particular opening.]] [[Would you be open to hearing about partner roles like yours on a stronger platform?||Would you be open to a confidential conversation about roles like yours on a stronger platform?||Would you want to hear about roles like yours at firms with a stronger platform?]] [[The firms I work with have great reputations, deep resources and rate flexibility when it's needed.||I work with firms that have great reputations, real resources and room on rates when a practice needs it.]]
 
-If the timing isn't right, no problem at all.
+[[A one-line reply is plenty.||Even a quick yes or no helps.||If so, just reply here.]] [[If you'd rather I not reach out again, just tell me.||If you'd prefer I not reach out again, just let me know.]]
 
-Best,
+Best regards,
 $sender_signature
-
-To stop hearing from me, reply "unsubscribe" or email $unsubscribe_email.
-$sender_address

@@ -1,9 +1,8 @@
 Hi $first_name,
 
-A quick question: if a firm with a stronger platform for $practice_work wanted to talk, would you take a confidential call? A yes or no is all I need, and I'll only bring you something that genuinely fits.
+[[Quick question: would you take a call if a firm with a stronger platform wanted to talk about your $practice_desc?||One question for you: if a firm with a stronger platform wanted to talk about your $practice_desc, would you take a call?||Would you take a call if a firm with a stronger platform wanted to talk about your $practice_desc?]] [[A yes or no is all I need.||A one-word reply works.||Either answer is helpful.]]
 
-Best,
+[[If you'd rather I not reach out again, just tell me.||If you'd prefer I stop, just let me know.]]
+
+Best regards,
 $sender_signature
-
-To stop hearing from me, reply "unsubscribe" or email $unsubscribe_email.
-$sender_address

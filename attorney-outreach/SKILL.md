@@ -75,6 +75,24 @@ python3 scripts/partner_outreach.py send --state ./partner-state \
 `prepare_skipped.csv`. Keep this folder between runs. It is what prevents
 repeat emails.
 
+### Making it read like Jon, not a template
+- **Greeting and voice:** "Hi <first name>," (never "Dear"). "I am a legal recruiter with
+  VortexLegal." Sign off "Best regards," with Jon's real signature, which includes the
+  mailing address.
+- **Firm and practice:** the firm is named by its first two words with no LLP/LLC/PA/PC,
+  and there's no city. One practice area, in plain words: `plain_practice()` turns
+  "LABOR & EMPLOYMENT" into "employment".
+- **Rotated wording:** every sentence has 2–3 versions (`[[a||b||c]]` in the templates).
+  Each person gets a fixed mix chosen from their email address, so a rebuilt queue keeps
+  the same wording.
+- **Subjects:** rotated from `templates/partner_subjects.txt`.
+- **Length:** about 80 words, with "confidential" used at most once.
+- **Spread-out sending:** 4 runs per weekday at uneven times (e.g. 9:41, 11:23, 13:52 and
+  15:37 ET), up to `--max-per-run 10` each, with the 40/day cap across all runs. Each
+  outbox entry has `pause_seconds_before` (60–300 s): wait that long before sending it.
+- **First names:** initials-only names ("K C") use the first name from a first.last email
+  address. If there isn't one, that partner is skipped.
+
 ### Rules
 - **Follow-up openings:** never open with a reminder ("just bumping this", "following up",
   "bringing this to the top of your inbox", "circling back", "checking in", "in case it got
@@ -126,6 +144,6 @@ State folder: `partner-state/` (keep it between runs).
    - Otherwise send with `outlook_send_mail` (to, subject, body, bodyType text), then
      run `record <to>`. On an error, run `record --status failed --detail "<error>" <to>`
      and stop after 3 failures.
-   - Pause ~20–60 seconds between sends.
+   - Wait each entry's `pause_seconds_before` before sending it.
 5. **Summarize:** follow-ups and first emails sent / skipped / failed, unsubscribes processed, and
    interested replies.

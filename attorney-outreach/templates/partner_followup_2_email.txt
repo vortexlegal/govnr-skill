@@ -1,9 +1,6 @@
 Hi $first_name,
 
-If a move ever makes sense for your $practice_phrase, whether for a stronger platform, rate flexibility or more resources behind your clients, I'd be glad to be a confidential sounding board. Reply whenever the timing is right. I won't reach out again unless you do.
+[[If a move ever makes sense for your $practice_desc||If the timing is ever right to move your $practice_desc]], [[I'd be glad to be a sounding board||I'm happy to help you think it through]], whether the goal is a stronger platform, rate flexibility or more resources behind your clients. [[Just reply whenever it's useful.||Reply any time.]] I won't reach out again unless you do.
 
-Best,
+Best regards,
 $sender_signature
-
-To stop hearing from me, reply "unsubscribe" or email $unsubscribe_email.
-$sender_address

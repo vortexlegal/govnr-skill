@@ -133,8 +133,9 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertEqual(batch[0]["kind"], "followup1")    # follow-ups go first
         self.assertTrue(fus[a]["subject"].startswith("RE: "))
         self.assertEqual(fus[a]["original_subject"], first[0]["subject"])
-        self.assertIn("confidential call", fus[a]["body"])
+        self.assertIn("stronger platform", fus[a]["body"])
         self.assertIn("123 Main St", fus[a]["body"])
+        self.assertTrue(fus[a]["body"].startswith("Hi "))
         run("record", "--state", str(self.state), "--kind", "followup1", a, b)
 
         self._age_log(1)                                   # day 6: follow-up 1 not repeated
@@ -145,8 +146,8 @@ class PartnerOutreachTest(unittest.TestCase):
         fus = self._fus(self._outlook_send(cap="5"))
         self.assertEqual(list(fus), [a])
         self.assertEqual(fus[a]["kind"], "followup2")
-        self.assertIn("sounding board", fus[a]["body"])
-        self.assertIn(first[0]["practice"].split(" and ")[0], fus[a]["body"])
+        self.assertIn("reach out again unless you do", fus[a]["body"])
+        self.assertIn(first[0]["practice"], fus[a]["body"])
         run("record", "--state", str(self.state), "--kind", "followup2", a)
 
         self._age_log(60)                                  # nothing after the second follow-up
@@ -186,9 +187,9 @@ class PartnerOutreachTest(unittest.TestCase):
         import tempfile as tf
         f = Path(tf.mkdtemp()) / "c.csv"
         f.write_text("firstName,email,currentTitle,currentCompany,practiceAreas\n"
-                     "A,a@x.com,Partner,X LLP,FAMILY LAW; DIVORCE\n"
-                     "B,b@y.com,Partner,Y LLP,TAX; FAMILY LAW\n"
-                     "C,c@z.com,Partner,Z LLP,PERSONAL INJURY\n")
+                     "Amy,a@x.com,Partner,X LLP,FAMILY LAW; DIVORCE\n"
+                     "Bob,b@y.com,Partner,Y LLP,TAX; FAMILY LAW\n"
+                     "Cal,c@z.com,Partner,Z LLP,PERSONAL INJURY\n")
         st = Path(tf.mkdtemp())
         run("prepare", "--state", str(st), *SENDER, "--contacts", str(f), "--sender-company", "V",
             "--sender-address", "X")
@@ -202,6 +203,9 @@ class PartnerOutreachTest(unittest.TestCase):
                                         "practice_work": "tax work", "sender_signature": "J",
                                         "sender_address": "X", "unsubscribe_email": "j@v.com"})
             po.check_followup_opening(body)  # must not raise
+            for seed in range(200):  # every wording variant
+                po.check_followup_opening(po.render_body(tpl, {"first_name": "Ann", "practice_desc": "tax practice",
+                                                               "sender_signature": "J"}, seed=str(seed)))
         for bad in ["Just bumping my note from last week.", "Following up on my email.",
                     "I wanted to bring this to the top of your inbox.", "I wanted to bring this to the top of you're inbox.",
                     "Circling back on the below.", "Checking in on my last note.", "I reached out last month about roles.",
@@ -231,6 +235,47 @@ class PartnerOutreachTest(unittest.TestCase):
         }
         for raw, want in cases.items():
             self.assertEqual(po.short_firm(raw), want, raw)
+
+    def test_plain_single_practice_and_variation(self):
+        self.assertEqual(po.plain_practice(["LABOR & EMPLOYMENT", "ENVIRONMENT"]), "employment")
+        self.assertEqual(po.plain_practice(["GENERAL PRACTICE", "TRUSTS & ESTATES"]), "estate planning")
+        self.assertEqual(po.plain_practice(["REAL ESTATE", "CONSTRUCTION"]), "real estate")
+        self.assertEqual(po.plain_practice([]), "")
+        bodies = {r["body"].split("Best regards")[0] for r in rows(self.state / "queue.csv")}
+        self.assertEqual(len(bodies), len(rows(self.state / "queue.csv")))  # no two identical
+        for r in rows(self.state / "queue.csv"):
+            b = r["body"]
+            self.assertTrue(b.startswith("Hi "), b[:20])
+            self.assertNotIn("Dear", b)
+            self.assertNotRegex(b, r"\b(LLP|LLC|PLLC|P\.?A\.|P\.?C\.)\b")
+            self.assertLessEqual(b.lower().count("confidential"), 1)
+            self.assertIn("123 Main St", b)  # address in signature
+            self.assertLess(len(b.split("Best regards")[0].split()), 95)
+        # Same person always gets the same wording and subject.
+        st2 = Path(tempfile.mkdtemp())
+        run("prepare", "--state", str(st2), *SENDER, "--contacts", str(ROOT / "examples" / "crm_partners.csv"),
+            "--sender-company", "Vortex Legal", "--sender-address", "123 Main St")
+        self.assertEqual([(r["subject"], r["body"]) for r in rows(st2 / "queue.csv")],
+                         [(r["subject"], r["body"]) for r in rows(self.state / "queue.csv")])
+
+    def test_greeting_name(self):
+        self.assertEqual(po.greeting_name("E Chase"), "Chase")
+        self.assertEqual(po.greeting_name("E."), "")
+        self.assertEqual(po.greeting_name("K C"), "")
+        self.assertEqual(po.greeting_name("Anne Marie"), "Anne Marie")
+        self.assertEqual(po.greeting_name("Dana"), "Dana")
+        self.assertEqual(po.name_from_email("lisa.colon@saul.com", "Colon"), "Lisa")
+        self.assertEqual(po.name_from_email("drew.linnenbom@dinsmore.com", "Linnenbom"), "Drew")
+        self.assertEqual(po.name_from_email("rlevy@offitkurman.com", "Levy"), "")
+        self.assertEqual(po.name_from_email("info.dept@firm.com", "Levy"), "")
+
+    def test_max_per_run(self):
+        batch = __import__("json").loads("[]")
+        run("send", "--state", str(self.state), *SENDER, "--transport", "outlook", "--live", "--ignore-hours",
+            "--daily-cap", "40", "--max-per-run", "2", "--per-firm-daily", "5", "--sender-address", "X")
+        batch = __import__("json").loads((self.state / "outbox.json").read_text())
+        self.assertEqual(len(batch), 2)
+        self.assertTrue(all(60 <= b["pause_seconds_before"] <= 300 for b in batch))
 
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")

@@ -144,6 +144,27 @@ def short_firm(name: str) -> str:
     return tidy_name(out) if out.isupper() and len(out) > 4 else out
 
 
+def greeting_name(first: str) -> str:
+    """The name to greet someone by, or "" if the record only has initials ("K C", "E.")."""
+    parts = [p for p in re.split(r"\s+", (first or "").strip()) if p]
+    real = [p for p in parts if len(p.strip(".")) > 1]
+    if not real:
+        return ""
+    if len(parts[0].strip(".")) <= 1:      # "E Chase" -> "Chase"
+        return real[0]
+    return " ".join(parts)                   # "Anne Marie", "Mary-Ellen"
+
+
+def name_from_email(email: str, last_name: str) -> str:
+    """'lisa.colon@saul.com' + 'Colon' -> 'Lisa'. Only for first.last style addresses."""
+    local = email.split("@")[0].lower()
+    last = re.sub(r"[^a-z]", "", (last_name or "").lower().split(" ")[0])
+    m = re.match(r"^([a-z]{2,})[._-]([a-z]+)", local)
+    if m and last and m.group(2).startswith(last[:4]):
+        return m.group(1).title()
+    return ""
+
+
 def tidy_name(s: str) -> str:
     s = (s or "").strip()
     return s.title() if s.isupper() or s.islower() else s
@@ -224,11 +245,68 @@ def fix_subject(subject: str) -> str:
 def sender_signature(a) -> str:
     contact = " | ".join(x for x in [a.sender_phone, a.sender_email] if x)
     return "\n".join(x for x in [
-        a.sender_name, ", ".join(x for x in [a.sender_title, a.sender_company] if x), contact, a.sender_website] if x)
+        a.sender_name, ", ".join(x for x in [a.sender_title, a.sender_company] if x), contact, a.sender_website,
+        getattr(a, "sender_address", "")] if x)
 
 
-def render_body(tpl: Template, vals: dict) -> str:
+# CRM practice tags -> how a recruiter would say them.
+PLAIN_PRACTICE = {
+    "labor & employment": "employment", "labor and employment": "employment", "employment": "employment",
+    "trusts & estates": "estate planning", "trusts and estates": "estate planning", "estate planning": "estate planning",
+    "mergers & acquisitions": "M&A", "mergers and acquisitions": "M&A", "m&a": "M&A",
+    "intellectual property": "IP", "ip": "IP", "patent": "patent", "patents": "patent", "trademark": "trademark",
+    "environment": "environmental", "environmental": "environmental", "healthcare": "health care",
+    "health care": "health care", "bankruptcy": "restructuring", "restructuring": "restructuring",
+    "bankruptcy & restructuring": "restructuring", "banking": "banking", "banking & finance": "finance",
+    "finance": "finance", "corporate": "corporate", "real estate": "real estate", "tax": "tax",
+    "litigation": "litigation", "commercial litigation": "commercial litigation", "insurance": "insurance",
+    "insurance coverage": "insurance coverage", "white collar": "white collar", "securities": "securities",
+    "construction": "construction", "employee benefits": "employee benefits", "erisa": "employee benefits",
+    "erisa-c&b": "employee benefits", "exec compensation": "executive compensation",
+    "private equity": "private equity", "antitrust": "antitrust", "energy": "energy",
+    "product liability": "product liability", "professional liability": "professional liability",
+    "medical malpractice": "medical malpractice", "elder care": "elder law", "franchise": "franchise",
+    "land use": "land use", "public finance": "public finance", "government contracts": "government contracts",
+    "privacy": "privacy", "data privacy": "privacy", "cybersecurity": "cybersecurity", "appellate": "appellate",
+    "family law": "family law", "investigations": "investigations", "wage & hour": "wage and hour",
+}
+
+
+def plain_practice(areas: list[str]) -> str:
+    """One practice area, in plain words: the first specific tag on record."""
+    cleaned = [a.strip() for a in areas if a and a.strip()]
+    specific = [a for a in cleaned if a.lower() not in GENERIC_AREAS] or cleaned
+    if not specific:
+        return ""
+    tag = specific[0].lower()
+    if tag in PLAIN_PRACTICE:
+        return PLAIN_PRACTICE[tag]
+    return " ".join(w if w.upper() in ACRONYMS else w.lower() for w in specific[0].split())
+
+
+def spin(text: str, seed: str) -> str:
+    """Pick one option from each [[a||b||c]] block, the same way every time for a given seed."""
+    import hashlib
+    counter = iter(range(10_000))
+
+    def pick(m):
+        opts = [o.strip() for o in m.group(1).split("||")]
+        h = hashlib.sha256(f"{seed}:{next(counter)}".encode()).digest()
+        return opts[h[0] % len(opts)]
+    return re.sub(r"\[\[(.+?)\]\]", pick, text, flags=re.S)
+
+
+def practice_vars(practice: str) -> dict:
+    return {
+        "practice": practice,
+        "practice_desc": f"{practice} practice" if practice else "practice",
+        "practice_roles": f"{practice[0].upper() + practice[1:]} partner roles" if practice else "Partner roles",
+    }
+
+
+def render_body(tpl: Template, vals: dict, seed: str = "") -> str:
     body = tpl.safe_substitute(vals)
+    body = spin(body, seed or vals.get("first_name", ""))
     return re.sub(r"\n{3,}", "\n\n", "\n".join(l.rstrip() for l in body.splitlines())).strip() + "\n"
 
 
@@ -316,7 +394,8 @@ def cmd_prepare(a) -> int:
     queued = {r["to"].lower() for r in read_rows(state / "queue.csv")}
 
     body_tpl = Template(a.template.read_text(encoding="utf-8"))
-    subj_tpl = Template(a.subject)
+    subjects = [l.strip() for l in a.subjects.read_text(encoding="utf-8").splitlines()
+                if l.strip() and not l.lstrip().startswith("#")]
     signature = sender_signature(a)
 
     new_rows, skipped, seen = [], [], set()
@@ -345,6 +424,11 @@ def cmd_prepare(a) -> int:
             skip(f"emailed within {a.recontact_days} days"); continue
         if email in queued or email in seen:
             skip("already queued / duplicate"); continue
+        if not greeting_name(c["first_name"]):
+            c["first_name"] = name_from_email(email, c["last_name"])
+            if not c["first_name"]:
+                skip("first name is initials only"); continue
+        c["first_name"] = greeting_name(c["first_name"])
         areas = parse_areas(c["practice_areas"])
         excluded = {x.strip().lower() for x in a.exclude_practice.split(",") if x.strip()}
         if areas and areas[0].strip().lower() in excluded:
@@ -353,24 +437,25 @@ def cmd_prepare(a) -> int:
             skip("no practice area on record"); continue
         seen.add(email)
 
-        practice = display_practice(areas) or "your"
+        practice = plain_practice(areas)
         vals = {
             "first_name": c["first_name"] or "there",
             "firm": short_firm(c["firm"]) or "your firm",
             "title": c["title"],
-            "practice": practice,
-            "practice_phrase": f"{practice} practice" if areas else "practice",
+            **practice_vars(practice),
             "city_phrase": f" in {c['city']}" if c["city"] else "",
             "sender_name": a.sender_name, "sender_company": a.sender_company,
             "sender_signature": signature, "sender_address": a.sender_address,
             "unsubscribe_email": a.unsubscribe_email or a.sender_email,
         }
-        body = render_body(body_tpl, vals)
+        body = render_body(body_tpl, vals, seed=email)
+        import hashlib
+        subj_tpl = Template(subjects[hashlib.sha256(("subject:" + email).encode()).digest()[0] % len(subjects)])
         subject = fix_subject(re.sub(r"\s+", " ", subj_tpl.safe_substitute(vals)).strip())
         new_rows.append({
             "contact_key": c["_raw"].get("id") or c["_raw"].get("contact_id") or email,
             "to": email, "name": name, "firm": c["firm"], "title": c["title"],
-            "practice": practice if areas else "", "subject": subject, "body": body,
+            "practice": practice, "subject": subject, "body": body,
             "prepared_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         })
 
@@ -474,7 +559,7 @@ def cmd_send(a) -> int:
     remaining, attempted, sent, failed = [], 0, 0, 0
     transport = {"sendgrid": send_sendgrid, "smtp": send_smtp, "outlook": None}[a.transport]
     batch = []
-    limit = budget if a.live else a.daily_cap
+    limit = min(budget if a.live else a.daily_cap, a.max_per_run)
 
     # Follow-ups go first: at most one per person per day, on the `--followup-days` schedule
     # (days after the first email), and only while there's no reply.
@@ -492,11 +577,11 @@ def cmd_send(a) -> int:
             practice = r.get("practice") or ""
             body = render_body(fu_tpl, {
                 "first_name": (r.get("name") or "").split(" ")[0] or "there",
-                "practice_phrase": f"{practice} practice" if practice else "practice",
+                **practice_vars(practice),
                 "practice_work": f"{practice} work" if practice else "your practice",
                 "firm": r.get("firm") or "your firm",
                 "sender_signature": sender_signature(a), "sender_address": a.sender_address,
-                "unsubscribe_email": a.unsubscribe_email or a.sender_email})
+                "unsubscribe_email": a.unsubscribe_email or a.sender_email}, seed=f"{to}:followup{step}")
             check_followup_opening(body)
             subj = r.get("subject") or ""
             followups.append({"to": to, "name": r.get("name", ""), "firm": r.get("firm", ""),
@@ -529,7 +614,7 @@ def cmd_send(a) -> int:
         if a.transport == "outlook":
             # Sent by the Outlook connector; results come back via `record`.
             # Follow-ups are sent as a reply in the original thread.
-            batch.append({"kind": kind, **{k: row.get(k, "") for k in
+            batch.append({"kind": kind, "pause_seconds_before": random.randint(60, 300), **{k: row.get(k, "") for k in
                           ("to", "name", "firm", "practice", "subject", "body", "original_subject", "original_sent_at")}})
             if kind == "initial":
                 remaining.append(row)
@@ -632,7 +717,8 @@ def main() -> int:
     common(p)
     p.add_argument("--contacts", type=Path, required=True)
     p.add_argument("--template", type=Path, default=HERE / "templates" / "partner_outreach_email.txt")
-    p.add_argument("--subject", default="Your $practice_phrase at $firm")
+    p.add_argument("--subjects", type=Path, default=HERE / "templates" / "partner_subjects.txt",
+                   help="one subject per line; each person gets one, picked the same way every time")
     p.add_argument("--title-regex", default="", help="override which titles count as partner")
     p.add_argument("--require-practice", action="store_true", help="skip partners with no practice area on record")
     p.add_argument("--exclude-practice", default=os.environ.get(
@@ -644,7 +730,9 @@ def main() -> int:
     common(p)
     p.add_argument("--transport", choices=["outlook", "sendgrid", "smtp"], default="outlook")
     p.add_argument("--reply-to", default="")
-    p.add_argument("--daily-cap", type=int, default=40)
+    p.add_argument("--daily-cap", type=int, default=int(os.environ.get("OUTREACH_DAILY_CAP", "40")))
+    p.add_argument("--max-per-run", type=int, default=int(os.environ.get("OUTREACH_MAX_PER_RUN", "10")),
+                   help="emails per run; schedule several runs a day so sends are spread out")
     p.add_argument("--followup-days", default=os.environ.get("OUTREACH_FOLLOWUP_DAYS", "5,30"),
                    help="follow-up schedule in days after the first email, e.g. 5,30 (0 = none); "
                         "templates/partner_followup_<n>_email.txt is used for step n")
