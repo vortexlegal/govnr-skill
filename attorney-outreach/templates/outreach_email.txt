@@ -1,15 +1,13 @@
 Hi $first_name,
 
-I came across your work as $current_title at $current_firm, and your focus on $shared_areas stood out. I'm working on a $position_title role with $position_company in $position_location that looks very close to what you're doing now.
+I came across your work as $current_title at $current_firm, and your focus on $shared_areas stood out. I'm working on a $position_title role with $position_company $position_where that looks very close to what you're doing now.
 
 In short: $position_description. $comp_line
 $link_line
 Would you be open to a brief, confidential conversation to see if it's worth exploring? If the timing isn't right, no problem at all. I'm happy to keep you in mind for similar roles later.
 
 Best,
-$sender_name
-$sender_title, $sender_company
-$sender_email
+$sender_signature
 
 If you'd rather not hear from me about future opportunities, just reply "unsubscribe" and I'll remove you.
 $sender_address

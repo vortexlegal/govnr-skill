@@ -165,9 +165,18 @@ def render(tpl: Template, subj_tpl: Template, contact: dict, pos: dict, match: d
     c_areas = split_list(contact["practice_areas"])
     shared_display = [a for a in c_areas if norm_text(a) in set(match["shared_areas"])] or c_areas[:2]
     remote = (pos.get("remote") or "").strip().lower()
-    loc = pos.get("location", "")
-    if remote and remote not in {"onsite", "no", "false"}:
-        loc = f"{loc} ({remote})" if remote not in loc.lower() else loc
+    loc = (pos.get("location") or "").strip()
+    if loc.lower().startswith("remote") or remote in {"remote", "yes", "true"}:
+        where = ("(" + loc.replace("(", "").replace(")", "") + ")") if loc.lower().startswith("remote") else f"({loc}, remote)"
+    elif remote == "hybrid":
+        where = f"in {loc} (hybrid)"
+    else:
+        where = f"in {loc}" if loc else ""
+    sender = dict(sender)
+    sender["sender_signature"] = "\n".join(x for x in [
+        sender["sender_name"],
+        ", ".join(x for x in [sender["sender_title"], sender["sender_company"]] if x),
+        sender["sender_email"]] if x)
     vals = {
         "first_name": contact["first_name"] or "there",
         "current_title": contact["title"] or "your current role",
@@ -176,7 +185,7 @@ def render(tpl: Template, subj_tpl: Template, contact: dict, pos: dict, match: d
                                    for a in shared_display[:3]]),
         "position_title": pos.get("title", ""),
         "position_company": pos.get("company", "a client"),
-        "position_location": loc,
+        "position_where": where,
         "position_description": (pos.get("description") or "").rstrip("."),
         "comp_line": f"Compensation is in the {pos['comp_range']} range. " if pos.get("comp_range") else "",
         "link_line": f"Details: {pos['link']}\n\n" if pos.get("link") else "",
