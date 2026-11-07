@@ -71,7 +71,8 @@ PARTNER_RE = re.compile(
     r"\b(partner|shareholder|principal|managing member|equity member|member of the firm)\b", re.I)
 NOT_PARTNER_RE = re.compile(
     r"\b(associate partner|partner track|partnerships? (manager|coordinator)|paralegal|"
-    r"legal assistant|secretary|business development|marketing|recruit\w*|staff)\b", re.I)
+    r"legal assistant|secretary|business development|marketing|recruit\w*|staff|admin\w*|assistant|"
+    r"emerit\w*|retired|of counsel)\b", re.I)
 
 QUEUE_COLS = ["contact_key", "to", "name", "firm", "title", "practice", "subject", "body", "prepared_at"]
 LOG_COLS = ["sent_at", "to", "name", "firm", "subject", "transport", "status", "detail", "kind", "practice"]

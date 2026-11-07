@@ -45,6 +45,8 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertFalse(po.is_partner("Associate Partner"))
         self.assertFalse(po.is_partner("Partnerships Manager"))
         self.assertFalse(po.is_partner("Senior Associate"))
+        self.assertFalse(po.is_partner("Partner Admin"))
+        self.assertFalse(po.is_partner("Partner Emeritus"))
 
     def test_dry_run_changes_nothing(self):
         before = (self.state / "queue.csv").read_text()
