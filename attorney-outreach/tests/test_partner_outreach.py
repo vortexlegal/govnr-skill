@@ -146,7 +146,7 @@ class PartnerOutreachTest(unittest.TestCase):
         fus = self._fus(self._outlook_send(cap="5"))
         self.assertEqual(list(fus), [a])
         self.assertEqual(fus[a]["kind"], "followup2")
-        self.assertIn("reach out again unless you do", fus[a]["body"])
+        self.assertIn("No motion to compel.", fus[a]["body"])
         self.assertIn(first[0]["practice"], fus[a]["body"])
         run("record", "--state", str(self.state), "--kind", "followup2", a)
 
@@ -249,6 +249,7 @@ class PartnerOutreachTest(unittest.TestCase):
             self.assertNotIn("Dear", b)
             self.assertNotRegex(b, r"\b(LLP|LLC|PLLC|P\.?A\.|P\.?C\.)\b")
             self.assertLessEqual(b.lower().count("confidential"), 1)
+            self.assertIn("0.1", b)
             self.assertIn("123 Main St", b)  # address in signature
             self.assertLess(len(b.split("Best regards")[0].split()), 95)
         # Same person always gets the same wording and subject.
