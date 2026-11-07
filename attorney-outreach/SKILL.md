@@ -171,6 +171,19 @@ Same drip as above (first email, then follow-ups at day 5 and 30 if no reply), s
 4. **Send:** `send --state partner-state-personal ...` exactly as in the main workflow. Show the user
    the sample before the first live send.
 
+### Daily CRM sync (new personal emails)
+VortexRecruitCRM exposes `GET /api/external/personal-email-candidates` (header `x-api-key`, read-only):
+candidates with a saved personal email, their EmailListVerify result, DNU flag and a reliable title
+from the notes when the title field is empty. `scripts/crm_sync.py` pulls everything changed since the
+last run into `VLCRM/crm/personal/candidates.csv` and derives `titled.csv`, `untitled.csv` and
+`crm_dnu.csv`. The key is a network secret on this environment (the proxy sends it); `CRM_BASE_URL`
+is in `outreach.env`.
+
+`./run_personal_sync.sh sync` (once each weekday) pulls, re-runs `prepare` for the three drips (only
+new people are added; anyone queued, sent or suppressed is skipped), and commits the state to VLCRM.
+It never sends. `status` shows the counts; `batch <audience>` builds a send batch only after Jon
+approved sending for that drip.
+
 ## Job-matching mode (specific openings)
 `scripts/match_and_draft.py` matches contacts to a positions CSV and drafts an
 email per match for review. See its `--help` and `examples/positions.csv`.
