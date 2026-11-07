@@ -209,6 +209,29 @@ class PartnerOutreachTest(unittest.TestCase):
             with self.assertRaises(ValueError, msg=bad):
                 po.check_followup_opening(f"Hi Ann,\n\n{bad} More text here.\n")
 
+    def test_short_firm(self):
+        cases = {
+            "Dawda Mann Mulcahy & Sadler PLC": "Dawda Mann",
+            "Honigman LLP Attorneys & Counselors": "Honigman",
+            "Vorys, Sater, Seymour and Pease, LLP": "Vorys Sater",
+            "Kaufman & Dolowich": "Kaufman",
+            "Duane Morris LLP": "Duane Morris",
+            "William Mattar, P.C.": "William Mattar",
+            "Ruiz Gold PA": "Ruiz Gold",
+            "Law Offices of Jane Doe, P.A.": "Jane Doe",
+            "Taft Stettinius & Hollister LLP": "Taft Stettinius",
+            "Couzens Lansky Fealk Ellis Roeder & Lazar, PC": "Couzens Lansky",
+            "Smith & Associates, LLC": "Smith",
+            "BECKER LAW PC": "Becker Law",
+            "Clausen Miller, P.C.": "Clausen Miller",
+            "Naman Howell Smith & Lee PLLC": "Naman Howell",
+            "K & L Gates LLP": "K&L Gates",
+            "K & L": "K&L",
+            "J&G Law": "J&G Law",
+        }
+        for raw, want in cases.items():
+            self.assertEqual(po.short_firm(raw), want, raw)
+
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")
 

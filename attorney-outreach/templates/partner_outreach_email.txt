@@ -1,6 +1,6 @@
 Hi $first_name,
 
-I'm $sender_name with $sender_company. I work with partners considering lateral moves, and your $practice_phrase at $firm$city_phrase caught my attention.
+I'm $sender_name with $sender_company. I work with partners considering lateral moves, and your $practice_phrase at $firm caught my attention.
 
 I'm not writing about one specific opening. I'd like to know whether you'd be open to hearing, confidentially, about partner roles similar to what you do now, on a stronger platform. I work with firms that have great reputations, deep resources and rate flexibility when a practice needs it. If you're open to it, a one-line reply is plenty, and I'll only bring you opportunities that are a genuine fit.
 

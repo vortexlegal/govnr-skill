@@ -117,6 +117,33 @@ def display_practice(areas: list[str]) -> str:
     return " and ".join((specific or areas)[:2])
 
 
+ENTITY_SUFFIX_RE = re.compile(
+    r"\b(l\.?\s?l\.?\s?p|l\.?\s?l\.?\s?c|p\.?\s?l\.?\s?l\.?\s?c|p\.?\s?l\.?\s?c|a\.?\s?p\.?\s?l\.?\s?c|a\.?\s?p\.?\s?c|"
+    r"l\.?\s?p\.?\s?a|p\.?\s?c|p\.?\s?a|s\.?\s?c|l\.?\s?c|ltd|limited|inc|incorporated|chartered|chtd|co)\b\.?", re.I)
+FIRM_FILLER_RE = re.compile(r"\b(attorneys?|counsel+ors?|lawyers|at law|law firm|law group|law offices?|"
+                            r"legal group|& associates|and associates)\b.*$", re.I)
+
+
+def short_firm(name: str) -> str:
+    """How a partner would say their own firm: first two words, no entity suffix.
+
+    "Dawda Mann Mulcahy & Sadler PLC" -> "Dawda Mann"; "Honigman LLP Attorneys & Counselors" -> "Honigman";
+    "Vorys, Sater, Seymour and Pease, LLP" -> "Vorys Sater"; "Kaufman & Dolowich" -> "Kaufman";
+    "Law Offices of Jane Doe, P.A." -> "Jane Doe".
+    """
+    n = (name or "").strip()
+    n = re.sub(r"^(the\s+)?law\s+offices?\s+of\s+", "", n, flags=re.I)
+    n = ENTITY_SUFFIX_RE.split(n)[0] if ENTITY_SUFFIX_RE.search(n) else n
+    n = FIRM_FILLER_RE.sub("", n)
+    n = re.sub(r"\b([A-Za-z]{1,2})\s*&\s*([A-Za-z]{1,2})\b", r"\1&\2", n)  # "K & L Gates" -> "K&L Gates"
+    words = [w.strip(",.;") for w in n.replace(",", " ").split() if w.strip(",.;")]
+    words = words[:2]
+    while words and words[-1].lower() in {"&", "and", "of", "the", "+"}:
+        words.pop()
+    out = " ".join(words) or (name or "").strip()
+    return tidy_name(out) if out.isupper() and len(out) > 4 else out
+
+
 def tidy_name(s: str) -> str:
     s = (s or "").strip()
     return s.title() if s.isupper() or s.islower() else s
@@ -329,7 +356,7 @@ def cmd_prepare(a) -> int:
         practice = display_practice(areas) or "your"
         vals = {
             "first_name": c["first_name"] or "there",
-            "firm": c["firm"] or "your firm",
+            "firm": short_firm(c["firm"]) or "your firm",
             "title": c["title"],
             "practice": practice,
             "practice_phrase": f"{practice} practice" if areas else "practice",
