@@ -4,7 +4,7 @@ Hi $first_name,
 
 [[I'm not reaching out about a specific opening.||This isn't about one particular opening.]] [[Would you be open to hearing about partner roles like yours on a stronger platform?||Would you be open to a confidential conversation about roles like yours on a stronger platform?||Would you want to hear about roles like yours at firms with a stronger platform?]] [[The firms I work with have great reputations, deep resources and rate flexibility when it's needed.||I work with firms that have great reputations, real resources and room on rates when a practice needs it.]]
 
-[[A one-line reply is plenty.||Even a quick yes or no helps.||If so, just reply here.]] [[If you'd rather I not reach out again, just tell me.||If you'd prefer I not reach out again, just let me know.]]
+[[A one-line reply is plenty.||Even a quick yes or no helps.||If so, just reply here.]] [[If you'd rather I not reach out again, tell me.||If you'd prefer I not reach out again, let me know.]]
 
 Best regards,
 $sender_signature

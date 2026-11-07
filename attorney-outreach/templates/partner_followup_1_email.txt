@@ -1,8 +1,8 @@
 Hi $first_name,
 
-[[Quick question: would you take a call if a firm with a stronger platform wanted to talk about your $practice_desc?||One question for you: if a firm with a stronger platform wanted to talk about your $practice_desc, would you take a call?||Would you take a call if a firm with a stronger platform wanted to talk about your $practice_desc?]] [[A yes or no is all I need.||A one-word reply works.||Either answer is helpful.]]
+[[One question for you: if a firm with a stronger platform wanted to talk about your $practice_desc, would you take a call?||Would you take a call if a firm with a stronger platform wanted to talk about your $practice_desc?]] [[A yes or no is all I need.||A one-word reply works.||Either answer is helpful.]]
 
-[[If you'd rather I not reach out again, just tell me.||If you'd prefer I stop, just let me know.]]
+[[If you'd rather I not reach out again, tell me.||If you'd prefer I stop, let me know.]]
 
 Best regards,
 $sender_signature
