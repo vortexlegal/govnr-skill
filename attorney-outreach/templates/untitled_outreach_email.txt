@@ -1,0 +1,14 @@
+Hi $first_name,
+
+[[I am a legal recruiter with VortexLegal.||I am a legal recruiter with VortexLegal, and I work with attorneys at every level.]] $about_line
+
+[[Reading this should take less than a 0.1.||I'll keep this under a 0.1.]] [[Most of the best legal searches never get posted online.||The strongest opportunities rarely get posted online.]]
+
+[[The firms I work with are hiring attorneys across practice areas, and many offer a stronger platform, better hours or higher pay.||My clients are adding attorneys in a range of practices, and many offer a stronger platform, better hours or higher pay.]]
+
+[[Would you be open to a confidential conversation about what a move could look like for you?||Would you be open to a quick, confidential call about your next step?||Worth a quick conversation?]]
+
+[[Let me know if you're interested or would like to learn more!||Let me know if you'd like to learn more!||If you're interested or want to learn more, just let me know!]]
+
+Best regards,
+$sender_signature

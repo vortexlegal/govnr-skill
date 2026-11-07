@@ -74,7 +74,7 @@ def split_list(s: str) -> list[str]:
 
 
 def truthy(s) -> bool:
-    return str(s).strip().lower() in {"1", "true", "yes", "y", "x"}
+    return str(s).strip().lower() in {"1", "true", "t", "yes", "y", "x"}  # "t": Postgres boolean export
 
 
 def to_int(s, default=None):

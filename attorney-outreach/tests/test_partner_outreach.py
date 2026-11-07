@@ -362,14 +362,14 @@ class PersonalEmailTest(unittest.TestCase):
             w.writerow(["Dana", "Whit", "dana@harlow.com", "dana.w@gmail.com", "Harlow LLP", "Partner", "Tax"])
             w.writerow(["Marc", "Oye", "marc@gmail.com", "", "Bright LLP", "Partner", "Tax"])
             w.writerow(["Lee", "Park", "lee@park.com", "", "Park LLP", "Partner", "Tax"])
-            w.writerow(["Ana", "Ruiz", "ana@ruiz.com", "ana@ruizfamily.net", "Ruiz PA", "Shareholder", "Tax"])
+            w.writerow(["Ana", "Ruiz", "ana@ruiz.com", "ana.ruiz@icloud.com", "Ruiz PA", "Shareholder", "Tax"])
             w.writerow(["Kim", "Ng", "kim@ng.com", "kim.ng@yahoo.com", "Ng LLP", "Partner", "Tax"])
         self.verified = self.dir / "zb.csv"
         with open(self.verified, "w", newline="") as f:
             w = csv.writer(f)
             w.writerow(["Email Address", "ZB Status"])
             w.writerows([["dana.w@gmail.com", "valid"], ["marc@gmail.com", "invalid"],
-                         ["ana@ruizfamily.net", "catch-all"], ["kim.ng@yahoo.com", "valid"]])
+                         ["ana.ruiz@icloud.com", "catch-all"], ["kim.ng@yahoo.com", "valid"]])
 
     def prepare(self, *extra):
         return run("prepare", "--state", str(self.state), *SENDER, "--contacts", str(self.contacts),
@@ -385,7 +385,7 @@ class PersonalEmailTest(unittest.TestCase):
         code, _ = self.prepare("--export-emails", str(out))
         self.assertEqual(code, 0)
         self.assertEqual(sorted(r["email"] for r in rows(out)),
-                         ["ana@ruizfamily.net", "dana.w@gmail.com", "kim.ng@yahoo.com", "marc@gmail.com"])
+                         ["ana.ruiz@icloud.com", "dana.w@gmail.com", "kim.ng@yahoo.com", "marc@gmail.com"])
         self.assertEqual(rows(self.state / "queue.csv"), [])
         code, _ = self.prepare("--verified-file", str(self.verified), "--require-verified")
         self.assertEqual(code, 0)
@@ -393,7 +393,7 @@ class PersonalEmailTest(unittest.TestCase):
                          ["dana.w@gmail.com", "kim.ng@yahoo.com"])
         reasons = {r["email"] or r["name"]: r["reason"] for r in rows(self.state / "prepare_skipped.csv")}
         self.assertIn("invalid", reasons["marc@gmail.com"])
-        self.assertIn("catch-all", reasons["ana@ruizfamily.net"])
+        self.assertIn("catch-all", reasons["ana.ruiz@icloud.com"])
         self.assertEqual(reasons["Lee Park"], "no personal email on record")
 
     def test_verify_resumes_and_feeds_prepare(self):
@@ -401,7 +401,7 @@ class PersonalEmailTest(unittest.TestCase):
         self.prepare("--export-emails", str(src))
         res = self.dir / "elv.csv"
         answers = {"dana.w@gmail.com": "ok", "marc@gmail.com": "email_disabled",
-                   "ana@ruizfamily.net": "ok_for_all", "kim.ng@yahoo.com": "ok"}
+                   "ana.ruiz@icloud.com": "ok_for_all", "kim.ng@yahoo.com": "ok"}
         calls = []
         def fake(e, key, timeout=60):
             calls.append(e); return answers[e]
@@ -430,6 +430,60 @@ class PersonalEmailTest(unittest.TestCase):
         self.assertEqual([r["to"] for r in q], ["rae.fox@gmail.com"])
         self.assertNotIn("portable", q[0]["body"])
         self.assertIn("associate", q[0]["body"])
+
+    def test_untitled_dnu_t_and_firm_addresses(self):
+        p = self.dir / "crm2.csv"
+        with open(p, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["first_name", "last_name", "personal_email", "work_email", "current_title",
+                        "current_company", "practice_areas", "is_dnu"])
+            w.writerow(["Al", "One", "al1@gmail.com", "", "", "One Law Group", "", "f"])
+            w.writerow(["Fi", "Six", "fi6@gmail.com", "", "", "Walmart Global Tech", "", "f"])
+            w.writerow(["Bo", "Two", "bo2@gmail.com", "", "", "Acme LLP", "Tax", "t"])
+            w.writerow(["Cy", "Three", "cy3@jonesday.com", "", "", "Three Law PC", "", "f"])
+            w.writerow(["Di", "Four", "di4@gmail.com", "di@jonesday.com", "Partner", "Jones Day", "Tax", "f"])
+            w.writerow(["Ed", "Five", "ed5@edfive.com", "", "", "Acme LLP", "", "f"])
+        state = self.dir / "untitled"
+        code, _ = run("prepare", "--state", str(state), *SENDER, "--contacts", str(p),
+                      "--sender-address", "123 Main St", "--email-type", "personal", "--audience", "untitled")
+        self.assertEqual(code, 0)
+        q = {r["to"]: r for r in rows(state / "queue.csv")}
+        self.assertEqual(sorted(q), ["al1@gmail.com"])
+        reasons = {r["email"]: r["reason"] for r in rows(state / "prepare_skipped.csv")}
+        self.assertEqual(reasons["bo2@gmail.com"], "DNU / opted out in CRM")
+        self.assertEqual(reasons["cy3@jonesday.com"], "personal-email field holds a firm address")
+        self.assertIn("has a title", reasons["di4@gmail.com"])
+        for r in q.values():
+            self.assertNotIn("roles like yours", r["body"].lower())
+            self.assertNotIn("your firm", r["body"].lower())
+            self.assertNotIn("partner", r["body"].lower())
+        self.assertIn("likely a firm mailbox", reasons["ed5@edfive.com"])
+        self.assertEqual(reasons["fi6@gmail.com"], "no title, and employer isn't a law firm")
+        self.assertTrue(po.looks_like_firm_lawyer("", "johnbhoffmanesq@gmail.com", "John Hoffman", set()))
+        self.assertTrue(po.looks_like_firm_lawyer("Womble Bond", "y@gmail.com", "Y", {"womble bond"}))
+        self.assertFalse(po.looks_like_firm_lawyer("Clayton County District Attorney's Office", "a@gmail.com", "A", set()))
+        self.assertFalse(po.looks_like_firm_lawyer("", "dlc.beck@gmail.com", "Danny Beck", set()))
+        self.assertTrue(po.is_personal_domain("a@lawnet.ucla.edu"))
+        self.assertTrue(po.is_personal_domain("a@alumni.stanford.edu"))
+        self.assertFalse(po.is_personal_domain("a@shefskylaw.com"))
+        self.assertTrue(po.is_personal_domain("a@edfive.com", {"edfive.com"}))
+        self.assertIn("work at Acme", po.about_line("", "Acme", "x") + po.about_line("", "Acme", "y"))
+        self.assertEqual(po.about_line("", "Law Offices", "x"), "")
+        self.assertTrue(po.is_freemail("a@live.fr") and po.is_freemail("a@yahoo.co.in"))
+        self.assertNotIn("\n\n\n", q["al1@gmail.com"]["body"])
+
+    def test_take_over_queued(self):
+        other = self.dir / "work"
+        other.mkdir()
+        po.write_rows(other / "queue.csv", po.QUEUE_COLS,
+                      [{"to": "kim@ng.com", "name": "Kim Ng", "firm": "Ng LLP"},
+                       {"to": "x@y.com", "name": "X Y", "firm": "Y LLP"}])
+        self.prepare("--verified-file", str(self.verified), "--require-verified",
+                     "--other-state", str(other), "--take-over-queued")
+        self.assertEqual(sorted(r["to"] for r in rows(self.state / "queue.csv")),
+                         ["dana.w@gmail.com", "kim.ng@yahoo.com"])
+        self.assertEqual([r["to"] for r in rows(other / "queue.csv")], ["x@y.com"])
+        self.assertEqual([r["to"] for r in rows(other / "moved_to_other_campaign.csv")], ["kim@ng.com"])
 
     def test_require_verified_needs_file(self):
         code, _ = self.prepare("--require-verified")

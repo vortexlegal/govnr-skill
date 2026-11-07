@@ -115,6 +115,20 @@ repeat emails.
 
 ## Personal-email campaign (verified addresses only)
 
+**No title on record.** `--audience untitled` takes records with an empty title, keeps only those whose
+employer looks like a law firm (LLP/PC/PLLC/Law/Legal/"& Associates", or a firm name from the partner
+export passed as `--firm-domains-from`) or, with no employer, whose email/name says esq/law/atty.
+Government offices, schools, staffing and in-house employers are skipped. `templates/untitled_*.txt`
+never says partner, associate or "roles like yours", and the opening line uses only the details on
+record (no "your firm"; placeholder employers such as "Law Offices" are left out).
+
+**Personal means personal.** Consumer mailboxes (any country: live.fr, yahoo.co.in) and school/alumni
+addresses count. A custom domain in the personal-email field is usually a current or former firm
+mailbox and is skipped unless approved with `--allow-domain`. The CRM's `t`/`f` DNU flag is honored.
+
+**Queued elsewhere but not sent:** `--take-over-queued` moves those people into this campaign and out of
+the other queue (logged in `moved_to_other_campaign.csv`), so they get the personal drip only.
+
 **Partners and associates.** Run one campaign per audience, each with its own state folder:
 `--audience partner` (default) or `--audience associate`, passed to both `prepare` and `send`.
 Associates use `templates/associate_*.txt` (partnership track, hours, pay; no "portable book"
@@ -122,7 +136,7 @@ wording). Associate titles: Associate, Senior Associate, Associate Attorney, "<p
 Not included: Associate General Counsel and other in-house titles, Summer Associates, Associate
 Partner, non-attorney "associate" titles. Point each campaign's `--other-state` at the other
 campaigns' folders (and the work-email `state/`) so no one is emailed twice. State folders in VLCRM:
-`state-personal-partner/`, `state-personal-associate/`; verifier results: `crm/verified/`.
+`state-personal-partner/`, `state-personal-associate/`, `state-personal-untitled/`; CRM exports: `crm/personal/`; verifier results: `crm/verified/`.
 
 Same drip as above (first email, then follow-ups at day 5 and 30 if no reply), sent to partners'
 **personal** addresses instead of their firm address. Keep it in its own state folder.

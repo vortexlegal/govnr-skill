@@ -334,6 +334,26 @@ def spin(text: str, seed: str) -> str:
     return re.sub(r"\[\[(.+?)\]\]", pick, text, flags=re.S)
 
 
+GENERIC_FIRM_RE = re.compile(r"^(the )?(law (office|offices|firm|group)( of)?|attorneys? at law|private practice|"
+                             r"private legal|self[- ]employed|solo practi\w*|independent|freelance|na|n/a|none)$", re.I)
+
+
+def about_line(practice: str, firm: str, seed: str) -> str:
+    """Opening line built only from details on record (no placeholders like "your firm")."""
+    if GENERIC_FIRM_RE.match((firm or "").strip(" .,")):
+        firm = ""
+    if practice and firm:
+        opts = [f"Your {practice} practice at {firm} stood out to me.", f"I came across your {practice} practice at {firm}."]
+    elif firm:
+        opts = [f"I came across your work at {firm}.", f"Your work at {firm} caught my eye."]
+    elif practice:
+        opts = [f"Your {practice} practice stood out to me.", f"I came across your {practice} practice."]
+    else:
+        return ""
+    import hashlib
+    return opts[hashlib.sha256(("about:" + seed).encode()).digest()[0] % len(opts)]
+
+
 def practice_vars(practice: str, audience: str = "partner") -> dict:
     return {
         "practice": practice,
@@ -474,8 +494,24 @@ EMAIL_RE = re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")
 VALID_STATUSES = {"valid", "deliverable", "ok", "verified", "safe"}
 
 
+FREEMAIL_BRANDS = {"gmail", "googlemail", "yahoo", "ymail", "hotmail", "live", "outlook", "msn", "aol",
+                   "icloud", "gmx", "protonmail", "yandex", "zoho"}
+
+
 def is_freemail(email: str) -> bool:
-    return domain(email) in FREEMAIL_DOMAINS
+    """Consumer mailbox, including country variants (live.fr, yahoo.co.in, hotmail.it)."""
+    d = domain(email)
+    return d in FREEMAIL_DOMAINS or d.split(".")[0] in FREEMAIL_BRANDS
+
+
+ACADEMIC_RE = re.compile(r"(\.edu|^byulaw\.net)$|(^|\.)alumni?\.", re.I)
+
+
+def is_personal_domain(email: str, allowed: set[str] = frozenset()) -> bool:
+    """Consumer mailbox, school/alumni address, or a domain the user approved. Anything else in a
+    personal-email field is usually a current or former firm mailbox (shefskylaw.com, bakernet.com)."""
+    d = domain(email)
+    return is_freemail(email) or bool(ACADEMIC_RE.search(d)) or d in allowed
 
 
 def split_emails(value: str) -> list[str]:
@@ -498,6 +534,55 @@ def personal_email(raw: dict) -> str:
     return ""
 
 
+LAW_FIRM_RE = re.compile(
+    r"(\bl\.?l\.?p\b|\bp\.?l\.?l\.?c\b|\bp\.?c\.?$|\bp\.?a\.?$|\blaw\b|\blegal\b|\battorneys?\b|"
+    r"\blawyers?\b|\bchartered\b|& associates\b|\blaw (firm|group|offices?)\b|\bcounsel\b)", re.I)
+NOT_LAW_FIRM_RE = re.compile(
+    r"\b(district attorney|attorney general|public defender|county|department|state of|city of|"
+    r"u\.?s\.? |federal|court|university|school|college|e-?discovery|staffing|recruit\w*|consulting|"
+    r"insurance|bank|axiom|quimbee|epiq)\b", re.I)
+LAWYER_HINT_RE = re.compile(r"(esq|atty|lawyer|\blaw|law\b|jd\b|\bjd)", re.I)
+
+
+def known_firms(paths: list[Path]) -> set[str]:
+    """Short names of firms seen in partner exports (e.g. "womble bond", "gordon rees")."""
+    out = set()
+    for p in paths:
+        for r in read_rows(p):
+            low = {k.strip().lower(): v for k, v in r.items() if k}
+            f = short_firm(low.get("current_company") or low.get("firm") or "").lower()
+            if len(f) > 3:
+                out.add(f)
+    return out
+
+
+def looks_like_firm_lawyer(company: str, email: str, name: str, firms: set[str]) -> bool:
+    """For records with no title: true when the employer looks like a law firm, or when no employer
+    is on record but the email or name signals a lawyer (esq, atty, law)."""
+    company = (company or "").strip()
+    if company:
+        if NOT_LAW_FIRM_RE.search(company):
+            return False
+        return bool(LAW_FIRM_RE.search(company)) or short_firm(company).lower() in firms
+    local = email.split("@")[0]
+    return bool(LAWYER_HINT_RE.search(local) or re.search(r"\besq\b", name, re.I))
+
+
+def firm_domains(paths: list[Path], contacts: list[dict]) -> set[str]:
+    """Domains seen on work addresses (this export plus any --firm-domains-from CSVs). A 'personal'
+    address on one of these is a firm mailbox (often a former firm), not a personal one."""
+    out = set()
+    work_cols = ("work_email", "work email", "workemail", "email", "emails")
+    for rows in [contacts, *[read_rows(p) for p in paths]]:
+        for r in rows:
+            low = {k.strip().lower(): v for k, v in r.items() if k}
+            for col in work_cols:
+                for e in split_emails(low.get(col, "")):
+                    if not is_freemail(e):
+                        out.add(domain(e))
+    return out
+
+
 def load_verified(paths: list[Path]) -> dict[str, str]:
     """email -> status from an email-verifier export (ZeroBounce, NeverBounce, Kickbox, Bouncer...).
     Recognizes columns like email/Email Address and status/result/ZB Status."""
@@ -505,23 +590,52 @@ def load_verified(paths: list[Path]) -> dict[str, str]:
     for p in paths:
         for r in read_rows(p):
             low = {k.strip().lower(): (v or "").strip() for k, v in r.items() if k}
-            email = next((low[k] for k in ("email", "email address", "email_address", "address") if low.get(k)), "")
-            status = next((low[k] for k in ("status", "result", "zb status", "verification status",
-                                            "verdict", "state") if low.get(k)), "")
+            email = next((low[k] for k in ("email", "personal_email", "email address", "email_address", "address") if low.get(k)), "")
+            status = next((low[k] for k in ("verification_status", "status", "result", "zb status", "verification status",
+                                            "verdict") if low.get(k)), "")
             if email:
                 out[email.lower()] = status.lower()
     return out
 
 
-def contacted_people(states: list[Path]) -> set[tuple[str, str]]:
-    """(name, firm) of everyone sent anything from other campaigns' state, so a partner already
-    emailed at work isn't emailed again at home."""
+def person_key(name: str, firm: str) -> tuple[str, str]:
+    return (name.strip().lower(), short_firm(firm or "").lower())
+
+
+def contacted_people(states: list[Path], include_queued: bool = True) -> set[tuple[str, str]]:
+    """(name, firm) of everyone sent (or replied) in other campaigns' state, plus anyone still
+    queued there unless include_queued is False, so no one is emailed at both addresses."""
     out = set()
     for st in states:
-        for r in read_rows(st / "sent_log.csv") + read_rows(st / "queue.csv"):
-            if r.get("status", "sent") in ("sent", "replied", ""):
-                out.add((r.get("name", "").strip().lower(), short_firm(r.get("firm", "")).lower()))
+        for r in read_rows(st / "sent_log.csv"):
+            if r.get("status") in ("sent", "replied"):
+                out.add(person_key(r.get("name", ""), r.get("firm", "")))
+        if include_queued:
+            for r in read_rows(st / "queue.csv"):
+                out.add(person_key(r.get("name", ""), r.get("firm", "")))
     return out
+
+
+def take_over_queued(states: list[Path], people: set[tuple[str, str]], campaign: Path) -> int:
+    """Remove not-yet-sent queue rows for these people from the other campaigns, logging each in
+    that campaign's moved_to_other_campaign.csv. Returns how many rows moved."""
+    moved = 0
+    for st in states:
+        q = read_rows(st / "queue.csv")
+        if not q:
+            continue
+        keep, gone = [], []
+        for r in q:
+            (gone if person_key(r.get("name", ""), r.get("firm", "")) in people else keep).append(r)
+        if gone:
+            write_rows(st / "queue.csv", QUEUE_COLS, keep)
+            for r in gone:
+                append_row(st / "moved_to_other_campaign.csv", ["moved_at", "to", "name", "firm", "campaign"],
+                           {"moved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                            "to": r.get("to", ""), "name": r.get("name", ""), "firm": r.get("firm", ""),
+                            "campaign": str(campaign)})
+            moved += len(gone)
+    return moved
 
 
 # ---------- prepare ----------
@@ -553,10 +667,14 @@ def cmd_prepare(a) -> int:
     if a.require_verified and not verified:
         print("Refusing: --require-verified needs --verified-file with an email-verifier export.", file=sys.stderr)
         return 2
-    other_people = contacted_people(a.other_state)
+    other_people = contacted_people(a.other_state, include_queued=not a.take_over_queued)
+    contacts = read_csv(a.contacts)
+    firm_doms = firm_domains(a.firm_domains_from, contacts) if a.email_type == "personal" else set()
+    allowed_doms = {d.strip().lower().lstrip("@") for d in a.allow_domain}
+    firms = known_firms(a.firm_domains_from) if a.audience == "untitled" else set()
 
     new_rows, skipped, seen = [], [], set()
-    for raw in read_csv(a.contacts):
+    for raw in contacts:
         c = canon_contact(raw)
         if a.email_type == "personal":
             email = personal_email(raw)
@@ -570,15 +688,25 @@ def cmd_prepare(a) -> int:
         def skip(reason):
             skipped.append({"name": name, "email": email, "title": c["title"], "reason": reason})
 
-        if a.audience == "associate" and not a.title_regex:
+        if a.audience == "untitled":
+            if c["title"].strip():
+                skip("has a title (use the partner/associate campaigns)"); continue
+            if not looks_like_firm_lawyer(c["firm"], email, name, firms):
+                skip("no title, and employer isn't a law firm"); continue
+        elif a.audience == "associate" and not a.title_regex:
             if not is_associate(c["title"]):
                 skip("not an associate title"); continue
         elif not is_partner(c["title"], pattern):
             skip("not a partner title"); continue
-        if is_leadership(c["title"]):
+        if a.audience != "untitled" and is_leadership(c["title"]):
             skip("firm leadership title (managing/founding partner, CEO, president...)"); continue
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
             skip("no personal email on record" if a.email_type == "personal" else "missing/invalid email"); continue
+        if a.email_type == "personal" and not is_freemail(email) and domain(email) in firm_doms:
+            skip("personal-email field holds a firm address"); continue
+        if a.email_type == "personal" and not is_personal_domain(email, allowed_doms):
+            skip(f"not a consumer or alumni address, likely a firm mailbox ({domain(email)}); "
+                 "approve with --allow-domain"); continue
         if truthy(c["do_not_contact"]):
             skip("DNU / opted out in CRM"); continue
         if email in suppressed:
@@ -600,7 +728,7 @@ def cmd_prepare(a) -> int:
             skip(f"main practice excluded ({areas[0].strip().lower()})"); continue
         if not areas and a.require_practice:
             skip("no practice area on record"); continue
-        if other_people and (name.lower(), short_firm(c["firm"]).lower()) in other_people:
+        if other_people and person_key(name, c["firm"]) in other_people:
             skip("already contacted in another campaign"); continue
         if a.require_verified and not a.export_emails and verified.get(email) not in VALID_STATUSES:
             skip(f"email not verified valid ({verified.get(email) or 'not in verifier results'})"); continue
@@ -613,6 +741,7 @@ def cmd_prepare(a) -> int:
             "title": c["title"],
             **practice_vars(practice, a.audience),
             "city_phrase": f" in {c['city']}" if c["city"] else "",
+            "about_line": about_line(practice, short_firm(c["firm"]), email),
             "sender_name": a.sender_name, "sender_company": a.sender_company,
             "sender_signature": signature, "sender_address": a.sender_address,
             "unsubscribe_email": a.unsubscribe_email or a.sender_email,
@@ -637,6 +766,9 @@ def cmd_prepare(a) -> int:
               f"Skipped {len(skipped)}.")
         return 0
     write_rows(state / "queue.csv", QUEUE_COLS, read_rows(state / "queue.csv") + new_rows)
+    if a.take_over_queued and new_rows:
+        n = take_over_queued(a.other_state, {person_key(r["name"], r["firm"]) for r in new_rows}, state)
+        print(f"Took over {n} not-yet-sent row(s) from --other-state queues.")
     reasons: dict[str, int] = {}
     for s in skipped:
         reasons[s["reason"]] = reasons.get(s["reason"], 0) + 1
@@ -1009,7 +1141,7 @@ def main() -> int:
     p = sub.add_parser("prepare", help="build personalized emails for partners in a CRM export")
     common(p)
     p.add_argument("--contacts", type=Path, required=True)
-    p.add_argument("--audience", choices=["partner", "associate"], default="partner",
+    p.add_argument("--audience", choices=["partner", "associate", "untitled"], default="partner",
                    help="who this campaign is for: picks the title filter and templates/<audience>_*.txt")
     p.add_argument("--template", type=Path, default=None,
                    help="default templates/<audience>_outreach_email.txt")
@@ -1030,6 +1162,14 @@ def main() -> int:
                         "risky and missing are skipped)")
     p.add_argument("--other-state", type=Path, action="append", default=[],
                    help="another campaign's state folder; anyone sent or queued there (same name + firm) is skipped")
+    p.add_argument("--take-over-queued", action="store_true",
+                   help="people only queued (not yet sent) in an --other-state campaign are queued here "
+                        "instead and removed from that queue; anyone already sent there is still skipped")
+    p.add_argument("--allow-domain", action="append", default=[],
+                   help="with --email-type personal: a custom domain confirmed as personal (repeatable)")
+    p.add_argument("--firm-domains-from", type=Path, action="append", default=[],
+                   help="extra CSVs whose work emails mark firm domains (e.g. the partner export); with "
+                        "--email-type personal, an address on a firm domain is skipped")
     p.add_argument("--export-emails", type=Path,
                    help="also write the candidate addresses (after all other filters) to this CSV, "
                         "to upload to the verifier")
@@ -1046,7 +1186,7 @@ def main() -> int:
     p = sub.add_parser("send", help="send queued emails up to the daily cap")
     common(p)
     p.add_argument("--transport", choices=["outlook", "sendgrid", "smtp"], default="outlook")
-    p.add_argument("--audience", choices=["partner", "associate"], default="partner",
+    p.add_argument("--audience", choices=["partner", "associate", "untitled"], default="partner",
                    help="must match the prepare run: picks templates/<audience>_followup_<n>_email.txt")
     p.add_argument("--reply-to", default="")
     p.add_argument("--daily-cap", type=int, default=int(os.environ.get("OUTREACH_DAILY_CAP", "40")))

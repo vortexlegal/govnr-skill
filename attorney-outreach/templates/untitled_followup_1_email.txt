@@ -1,0 +1,8 @@
+Hi $first_name,
+
+[[One question for you: if a firm with a stronger platform wanted to talk with you, would you take a call?||Would you take a call if a firm with a stronger platform wanted to talk with you?]]
+
+[[Let me know if you're interested or would like to learn more!||Let me know if you'd like to learn more!||If you're interested or want to learn more, just let me know!]]
+
+Best regards,
+$sender_signature
