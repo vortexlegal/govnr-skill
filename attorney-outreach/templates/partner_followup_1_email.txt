@@ -4,7 +4,5 @@ Hi $first_name,
 
 [[A yes or no is all I need.||A one-word reply works.||Either answer is helpful.]]
 
-[[If you'd rather I not reach out again, tell me.||If you'd prefer I stop, let me know.]]
-
 Best regards,
 $sender_signature

@@ -291,6 +291,24 @@ class PartnerOutreachTest(unittest.TestCase):
         html = po.to_html("Hi Ann,\n\nLine one. Two.\n\nBest regards,\nJon\nVortexLegal & Co <x>\n")
         self.assertEqual(html, "<p>Hi Ann,</p><p>Line one. Two.</p><p>Best regards,<br>Jon<br>VortexLegal &amp; Co &lt;x&gt;</p>")
 
+    def test_no_opt_out_sentence(self):
+        for r in rows(self.state / "queue.csv"):
+            self.assertNotRegex(r["body"].lower(), r"not reach out again|prefer i stop|unsubscribe")
+
+    def test_separate_followup_cap(self):
+        first = self._outlook_send(cap="3")
+        run("record", "--state", str(self.state), *[b["to"] for b in first])
+        self._age_log(5)
+        # Follow-ups only (first-email cap 0), capped at 2.
+        run("send", "--state", str(self.state), *SENDER, "--transport", "outlook", "--live", "--ignore-hours",
+            "--daily-cap", "0", "--followup-daily-cap", "2", "--max-followups-per-run", "20", "--sender-address", "X")
+        batch = __import__("json").loads((self.state / "outbox.json").read_text())
+        self.assertEqual([b["kind"] for b in batch], ["followup1", "followup1"])
+        run("send", "--state", str(self.state), *SENDER, "--transport", "outlook", "--live", "--ignore-hours",
+            "--daily-cap", "5", "--followup-daily-cap", "0", "--per-firm-daily", "5", "--sender-address", "X")
+        batch = __import__("json").loads((self.state / "outbox.json").read_text())
+        self.assertTrue(batch and all(b["kind"] == "initial" for b in batch))
+
     def test_max_per_run(self):
         batch = __import__("json").loads("[]")
         run("send", "--state", str(self.state), *SENDER, "--transport", "outlook", "--live", "--ignore-hours",

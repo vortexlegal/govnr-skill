@@ -557,11 +557,15 @@ def cmd_send(a) -> int:
 
     log = read_rows(state / "sent_log.csv")
     today = now.date()
-    sent_today = sum(1 for r in log if r.get("status") == "sent"
-                     and datetime.fromisoformat(r["sent_at"]).astimezone(ET).date() == today)
-    budget = max(0, a.daily_cap - sent_today)
-    if budget == 0 and a.live:
-        print(f"Daily cap of {a.daily_cap} already reached ({sent_today} sent today).")
+    def sent_on_today(r):
+        return r.get("status") == "sent" and datetime.fromisoformat(r["sent_at"]).astimezone(ET).date() == today
+    init_today = sum(1 for r in log if sent_on_today(r) and (r.get("kind") or "initial") == "initial")
+    fu_today = sum(1 for r in log if sent_on_today(r) and (r.get("kind") or "").startswith("followup"))
+    sent_today = init_today + fu_today
+    budget_init = max(0, a.daily_cap - init_today)
+    budget_fu = max(0, a.followup_daily_cap - fu_today)
+    if budget_init == 0 and budget_fu == 0 and a.live:
+        print(f"Daily caps reached ({init_today}/{a.daily_cap} first emails, {fu_today}/{a.followup_daily_cap} follow-ups).")
         return 0
 
     missing = {"sendgrid": [] if os.environ.get("SENDGRID_API_KEY") else ["SENDGRID_API_KEY"],
@@ -577,12 +581,14 @@ def cmd_send(a) -> int:
     firm_key = lambda f: re.sub(r"[^a-z0-9]+", " ", (f or "").lower()).strip()
     firms_today: dict[str, int] = {}
     for r in log:
-        if r.get("status") == "sent" and datetime.fromisoformat(r["sent_at"]).astimezone(ET).date() == today:
+        if sent_on_today(r) and (r.get("kind") or "initial") == "initial":
             firms_today[firm_key(r.get("firm"))] = firms_today.get(firm_key(r.get("firm")), 0) + 1
     remaining, attempted, sent, failed = [], 0, 0, 0
     transport = {"sendgrid": send_sendgrid, "smtp": send_smtp, "outlook": None}[a.transport]
     batch = []
-    limit = min(budget if a.live else a.daily_cap, a.max_per_run)
+    limits = {"initial": min(budget_init if a.live else a.daily_cap, a.max_per_run),
+              "followup": min(budget_fu if a.live else a.followup_daily_cap, a.max_followups_per_run)}
+    used = {"initial": 0, "followup": 0}
 
     # Follow-ups go first: at most one per person per day, on the `--followup-days` schedule
     # (days after the first email), and only while there's no reply.
@@ -621,12 +627,16 @@ def cmd_send(a) -> int:
         if kind == "initial" and (to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS) or to in recent):
             continue  # dropped from the queue for good
         fk = firm_key(row.get("firm"))
-        if attempted >= limit or failed >= a.max_failures or (fk and firms_today.get(fk, 0) >= a.per_firm_daily):
+        bucket = "initial" if kind == "initial" else "followup"
+        # One partner per firm per day applies to first emails; follow-ups are already spread out.
+        firm_full = kind == "initial" and fk and firms_today.get(fk, 0) >= a.per_firm_daily
+        if used[bucket] >= limits[bucket] or failed >= a.max_failures or firm_full:
             if kind == "initial":
                 remaining.append(row)
             continue
+        used[bucket] += 1
         attempted += 1
-        if fk:
+        if fk and kind == "initial":
             firms_today[fk] = firms_today.get(fk, 0) + 1
         row["subject"] = fix_subject(row["subject"])
         if not a.live:
@@ -663,14 +673,16 @@ def cmd_send(a) -> int:
         (state / "outbox.json").write_text(json.dumps(batch, indent=2))
         n_fu = sum(1 for b in batch if b["kind"] != "initial")
         print(f"OUTLOOK BATCH: {len(batch)} email(s) ({n_fu} follow-up, {len(batch) - n_fu} first) written to {state / 'outbox.json'} "
-              f"(sent today so far: {sent_today}/{a.daily_cap}). Send each with outlook_send_mail, "
+              f"(sent today so far: {init_today}/{a.daily_cap} first emails, {fu_today}/{a.followup_daily_cap} follow-ups). "
+              f"Send each with outlook_send_mail, "
               f"then log results with `record`.")
         return 0
     if a.live:
         write_rows(state / "queue.csv", QUEUE_COLS, remaining)
     mode = "LIVE" if a.live else "DRY RUN"
     print(f"{mode}: {len(followups)} follow-up(s) due. {sent if a.live else attempted} {'sent' if a.live else 'would send'}, {failed} failed, "
-          f"{len(remaining)} still queued. Sent today: {sent_today + sent}/{a.daily_cap}.")
+          f"{len(remaining)} still queued. Sent today: {sent_today + sent} "
+          f"(caps: {a.daily_cap} first emails + {a.followup_daily_cap} follow-ups).")
     if failed >= a.max_failures:
         print(f"Stopped after {failed} failures; check sender credentials before the next run.", file=sys.stderr)
         return 1
@@ -756,7 +768,11 @@ def main() -> int:
     p.add_argument("--reply-to", default="")
     p.add_argument("--daily-cap", type=int, default=int(os.environ.get("OUTREACH_DAILY_CAP", "40")))
     p.add_argument("--max-per-run", type=int, default=int(os.environ.get("OUTREACH_MAX_PER_RUN", "10")),
-                   help="emails per run; schedule several runs a day so sends are spread out")
+                   help="first emails per run; schedule several runs a day so sends are spread out")
+    p.add_argument("--followup-daily-cap", type=int, default=int(os.environ.get("OUTREACH_FOLLOWUP_DAILY_CAP", "200")),
+                   help="follow-ups per day, on top of --daily-cap first emails")
+    p.add_argument("--max-followups-per-run", type=int,
+                   default=int(os.environ.get("OUTREACH_MAX_FOLLOWUPS_PER_RUN", "20")))
     p.add_argument("--followup-days", default=os.environ.get("OUTREACH_FOLLOWUP_DAYS", "5,30"),
                    help="follow-up schedule in days after the first email, e.g. 5,30 (0 = none); "
                         "templates/partner_followup_<n>_email.txt is used for step n")

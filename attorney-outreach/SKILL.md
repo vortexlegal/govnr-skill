@@ -106,8 +106,9 @@ repeat emails.
   contains one of these phrases.
 - **Truthful:** never claim a specific opening, a referral, or a prior relationship.
   The template only asks whether they're open to similar roles.
-- **Opt-outs:** honor them within 10 business days (CAN-SPAM). Keep the unsubscribe
-  line and the physical address.
+- **Opt-outs:** the emails don't carry an opt-out sentence (Jon's choice). Anyone who replies
+  asking to stop is suppressed on the next run and never emailed again. The mailing address stays
+  in the signature.
 - **Outside the US:** flag non-US partners. CASL and GDPR/PECR need consent or a
   lawful basis before cold email.
 - **Volume:** start with a low cap (20–40/day) on a warmed-up sending domain.
@@ -122,7 +123,7 @@ email per match for review. See its `--help` and `examples/positions.csv`.
 ## Daily Outlook run (what the scheduled task does each weekday)
 
 Sender settings live in `outreach.env` (Jonathan Broder, jbroder@vortexlegal.com,
-330 S. Pineapple Ave., Sarasota, FL 34236, cap 250/day including follow-ups, 1 partner per firm per day).
+330 S. Pineapple Ave., Sarasota, FL 34236, up to 250 first emails/day plus up to 200 follow-ups/day, 1 new partner per firm per day).
 State folder: `partner-state/` (keep it between runs).
 
 1. **Process replies first.** Search the Outlook Inbox for replies since the last run
