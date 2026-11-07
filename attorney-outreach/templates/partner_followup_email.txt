@@ -1,9 +1,0 @@
-Hi $first_name,
-
-Following up on my note from last month in case it got buried. If you'd ever like to hear, confidentially, about partner roles similar to your $practice_phrase, a quick reply is all it takes. If not, no worries at all, and I won't follow up again.
-
-Best,
-$sender_signature
-
-To stop hearing from me, reply "unsubscribe" or email $unsubscribe_email.
-$sender_address

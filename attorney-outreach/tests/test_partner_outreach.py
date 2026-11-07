@@ -113,35 +113,61 @@ class PartnerOutreachTest(unittest.TestCase):
             "--daily-cap", cap, "--sender-address", "123 Main St")
         return __import__("json").loads((self.state / "outbox.json").read_text())
 
-    def test_followup_after_30_days_once_and_not_after_reply(self):
+    def _fus(self, batch):
+        return {b["to"]: b for b in batch if b["kind"] != "initial"}
+
+    def test_followups_at_5_and_30_days(self):
         first = self._outlook_send(cap="2")
         self.assertTrue(all(b["kind"] == "initial" for b in first))
         run("record", "--state", str(self.state), *[b["to"] for b in first])
-        # 29 days later: nothing due yet.
-        self._age_log(29)
-        self.assertFalse([b for b in self._outlook_send(cap="2") if b["kind"] == "followup"])
-        # Day 30: both due; one has replied in the meantime.
-        self._age_log(1)
-        run("record", "--state", str(self.state), "--status", "replied", first[1]["to"])
+        a, b = first[0]["to"], first[1]["to"]
+
+        self._age_log(4)                                   # day 4: nothing due
+        self.assertFalse(self._fus(self._outlook_send(cap="2")))
+
+        self._age_log(1)                                   # day 5: follow-up 1 for both
         batch = self._outlook_send(cap="5")
-        fus = [b for b in batch if b["kind"] == "followup"]
-        self.assertEqual([b["to"] for b in fus], [first[0]["to"]])
-        self.assertTrue(fus[0]["subject"].startswith("RE: "))
-        self.assertEqual(fus[0]["original_subject"], first[0]["subject"])
-        self.assertIn("123 Main St", fus[0]["body"])
-        self.assertIn("won't follow up again", fus[0]["body"])
-        self.assertIn(first[0]["practice"].split(" and ")[0], fus[0]["body"])
-        self.assertEqual(batch[0]["kind"], "followup")  # follow-ups go first
-        # Recorded follow-up: never sent a second time.
-        run("record", "--state", str(self.state), "--kind", "followup", fus[0]["to"])
-        self.assertFalse([b for b in self._outlook_send(cap="5") if b["kind"] == "followup"])
+        fus = self._fus(batch)
+        self.assertEqual(set(fus), {a, b})
+        self.assertEqual({f["kind"] for f in fus.values()}, {"followup1"})
+        self.assertEqual(batch[0]["kind"], "followup1")    # follow-ups go first
+        self.assertTrue(fus[a]["subject"].startswith("RE: "))
+        self.assertEqual(fus[a]["original_subject"], first[0]["subject"])
+        self.assertIn("last week", fus[a]["body"])
+        self.assertIn("123 Main St", fus[a]["body"])
+        run("record", "--state", str(self.state), "--kind", "followup1", a, b)
+
+        self._age_log(1)                                   # day 6: follow-up 1 not repeated
+        self.assertFalse(self._fus(self._outlook_send(cap="5")))
+
+        run("record", "--state", str(self.state), "--status", "replied", b)
+        self._age_log(24)                                  # day 30: follow-up 2, only for a
+        fus = self._fus(self._outlook_send(cap="5"))
+        self.assertEqual(list(fus), [a])
+        self.assertEqual(fus[a]["kind"], "followup2")
+        self.assertIn("last note", fus[a]["body"])
+        self.assertIn(first[0]["practice"].split(" and ")[0], fus[a]["body"])
+        run("record", "--state", str(self.state), "--kind", "followup2", a)
+
+        self._age_log(60)                                  # nothing after the second follow-up
+        self.assertFalse(self._fus(self._outlook_send(cap="5")))
+
+    def test_late_followup1_keeps_spacing(self):
+        first = self._outlook_send(cap="1")
+        run("record", "--state", str(self.state), first[0]["to"])
+        self._age_log(29)                                   # follow-up 1 only goes out on day 29
+        run("record", "--state", str(self.state), "--kind", "followup1", first[0]["to"])
+        self._age_log(1)                                    # day 30, but only 1 day after follow-up 1
+        self.assertFalse(self._fus(self._outlook_send()))
+        self._age_log(24)                                   # 25 days after follow-up 1
+        self.assertEqual([f["kind"] for f in self._fus(self._outlook_send()).values()], ["followup2"])
 
     def test_followup_skips_unsubscribed(self):
         first = self._outlook_send(cap="1")
         run("record", "--state", str(self.state), first[0]["to"])
-        self._age_log(31)
+        self._age_log(6)
         run("suppress", "--state", str(self.state), first[0]["to"])
-        self.assertFalse([b for b in self._outlook_send() if b["kind"] == "followup"])
+        self.assertFalse(self._fus(self._outlook_send()))
 
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")

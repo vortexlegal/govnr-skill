@@ -1,0 +1,9 @@
+Hi $first_name,
+
+I reached out last month about partner roles similar to your $practice_phrase. This is my last note, as I don't want to crowd your inbox. If the timing is ever right, just reply and I'll take it from there. Wishing you a strong finish to the year.
+
+Best,
+$sender_signature
+
+To stop hearing from me, reply "unsubscribe" or email $unsubscribe_email.
+$sender_address

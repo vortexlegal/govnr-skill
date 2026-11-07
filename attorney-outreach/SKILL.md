@@ -53,10 +53,12 @@ python3 scripts/partner_outreach.py send --state ./partner-state \
   Stops after `--max-failures` failed sends.
 - **Failed sends:** they stay queued and are logged. They are never retried
   automatically in the same run.
-- **Follow-up:** one, 30 days after the first email (`--followup-days`, 0 turns it off),
-  only if there's no reply. It's sent as a reply in the same thread
-  (`templates/partner_followup_email.txt`). Follow-ups go out before new first emails
-  and count toward the daily cap and the per-firm limit.
+- **Follow-ups:** two, counted from the first email: day 5 and day 30
+  (`--followup-days 5,30`, 0 turns them off). Each one goes only if there's no reply, and
+  is sent as a reply in the same thread (`templates/partner_followup_1_email.txt`,
+  `templates/partner_followup_2_email.txt`). Follow-up 2 always comes at least 25 days
+  after follow-up 1. Follow-ups go out before new first emails and count toward the daily
+  cap and the per-firm limit. Nothing is sent after follow-up 2.
 - **Each email:** plain text, with a `List-Unsubscribe` header, an unsubscribe line,
   and the mailing address. Tracking pixels and link rewriting are off.
 - **Schedule:** run `send` once each weekday morning, e.g. cron `5 10 * * 1-5`
@@ -102,9 +104,9 @@ State folder: `partner-state/` (keep it between runs).
 2. **Build the batch:** `set -a; . ./outreach.env; set +a` then
    `python3 scripts/partner_outreach.py send --state partner-state --suppress-file <dnu parts> --live`
    (default transport is Outlook). This writes `partner-state/outbox.json`.
-3. **Follow-ups (`"kind": "followup"` in outbox.json; listed first).** Each is due because
-   the first email went out 30+ days ago (`--followup-days`) with no recorded reply. One
-   follow-up per person, ever.
+3. **Follow-ups (`"kind": "followup1"` or `"followup2"` in outbox.json; listed first).**
+   Follow-up 1 is due 5 days after the first email, follow-up 2 at 30 days, each only if
+   there's no recorded reply.
    - Check for a reply first: `outlook_email_search` with `sender=<to>` and
      `afterDateTime=<original_sent_at>`. If they wrote back, run
      `record --status replied <to>` and don't send.
@@ -112,7 +114,7 @@ State folder: `partner-state/` (keep it between runs).
      then `outlook_create_reply_draft` on it with the follow-up `body` and
      `outlook_send_draft`. This keeps it in the same thread. If the original can't be
      found, send with `outlook_send_mail` using the `RE:` subject.
-   - Run `record --kind followup <to>` (or `--status failed`).
+   - Run `record --kind <kind> <to>`, e.g. `--kind followup1` (or `--status failed`).
 4. **First emails (`"kind": "initial"`):**
    - Check Outlook for prior contact: `outlook_email_search` with `recipient=<to>`.
      If Jon has emailed this person in the last 180 days, run

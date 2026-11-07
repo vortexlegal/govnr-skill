@@ -183,20 +183,47 @@ def render_body(tpl: Template, vals: dict) -> str:
     return re.sub(r"\n{3,}", "\n\n", "\n".join(l.rstrip() for l in body.splitlines())).strip() + "\n"
 
 
-def due_followups(log: list[dict], days: int, now: datetime) -> list[dict]:
-    """People whose first email went out >= `days` ago, with no follow-up yet and no recorded reply."""
+def parse_followup_days(value: str) -> list[int]:
+    days = [int(x) for x in re.split(r"[,\s]+", str(value).strip()) if x and int(x) > 0]
+    if days != sorted(set(days)):
+        raise ValueError("follow-up days must be increasing, e.g. 5,30")
+    return days
+
+
+def due_followups(log: list[dict], days: list[int], now: datetime) -> list[tuple[int, dict]]:
+    """(step, first-email row) for people due their next follow-up.
+
+    Step n (1-based) is due once the first email is at least days[n-1] old, every earlier
+    step is done, step n isn't, there's no recorded reply, and the previous touch was at
+    least days[n-1] - days[n-2] days ago (so a late follow-up 1 still gets spacing).
+    """
     first: dict[str, dict] = {}
-    closed: set[str] = set()
+    done: dict[str, dict[int, datetime]] = {}
+    replied: set[str] = set()
     for r in log:
         to = (r.get("to") or "").lower()
         kind = r.get("kind") or "initial"
-        if r.get("status") == "replied" or (kind == "followup" and r.get("status") in ("sent", "skipped")):
-            closed.add(to)
+        if r.get("status") == "replied":
+            replied.add(to)
         elif kind == "initial" and r.get("status") == "sent" and to not in first:
             first[to] = r
-    cutoff = now - timedelta(days=days)
-    return [r for to, r in first.items()
-            if to not in closed and datetime.fromisoformat(r["sent_at"]) <= cutoff]
+        elif kind.startswith("followup") and r.get("status") in ("sent", "skipped"):
+            step = int(kind[len("followup"):] or 1)
+            done.setdefault(to, {})[step] = datetime.fromisoformat(r["sent_at"])
+    out = []
+    for to, r in first.items():
+        if to in replied:
+            continue
+        steps = done.get(to, {})
+        step = next((n for n in range(1, len(days) + 1) if n not in steps), None)
+        if step is None:
+            continue
+        start = datetime.fromisoformat(r["sent_at"])
+        last = steps.get(step - 1, start)
+        gap = days[step - 1] - (days[step - 2] if step > 1 else 0)
+        if now - start >= timedelta(days=days[step - 1]) and now - last >= timedelta(days=gap):
+            out.append((step, r))
+    return out
 
 
 # ---------- prepare ----------
@@ -375,11 +402,15 @@ def cmd_send(a) -> int:
     batch = []
     limit = budget if a.live else a.daily_cap
 
-    # Follow-ups go first: one per person, `--followup-days` after the first email, if no reply.
+    # Follow-ups go first: at most one per person per day, on the `--followup-days` schedule
+    # (days after the first email), and only while there's no reply.
     followups = []
-    if a.followup_days > 0:
-        fu_tpl = Template(a.followup_template.read_text(encoding="utf-8"))
-        for r in due_followups(log, a.followup_days, datetime.now(timezone.utc)):
+    fu_days = parse_followup_days(a.followup_days)
+    if fu_days:
+        templates = {n: Template((HERE / "templates" / f"partner_followup_{n}_email.txt").read_text(encoding="utf-8"))
+                     for n in range(1, len(fu_days) + 1)}
+        for step, r in due_followups(log, fu_days, datetime.now(timezone.utc)):
+            fu_tpl = templates[step]
             to = r["to"].lower()
             if to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS):
                 continue
@@ -392,7 +423,7 @@ def cmd_send(a) -> int:
                 "unsubscribe_email": a.unsubscribe_email or a.sender_email})
             subj = r.get("subject") or ""
             followups.append({"to": to, "name": r.get("name", ""), "firm": r.get("firm", ""),
-                              "practice": practice, "kind": "followup", "original_subject": subj,
+                              "practice": practice, "kind": f"followup{step}", "original_subject": subj,
                               "original_sent_at": r["sent_at"],
                               "subject": subj if subj.lower().startswith("re:") else f"RE: {subj}", "body": body})
     if followups and not a.sender_address:
@@ -444,7 +475,7 @@ def cmd_send(a) -> int:
 
     if a.transport == "outlook" and a.live:
         (state / "outbox.json").write_text(json.dumps(batch, indent=2))
-        n_fu = sum(1 for b in batch if b["kind"] == "followup")
+        n_fu = sum(1 for b in batch if b["kind"] != "initial")
         print(f"OUTLOOK BATCH: {len(batch)} email(s) ({n_fu} follow-up, {len(batch) - n_fu} first) written to {state / 'outbox.json'} "
               f"(sent today so far: {sent_today}/{a.daily_cap}). Send each with outlook_send_mail, "
               f"then log results with `record`.")
@@ -534,9 +565,9 @@ def main() -> int:
     p.add_argument("--transport", choices=["outlook", "sendgrid", "smtp"], default="outlook")
     p.add_argument("--reply-to", default="")
     p.add_argument("--daily-cap", type=int, default=40)
-    p.add_argument("--followup-days", type=int, default=int(os.environ.get("OUTREACH_FOLLOWUP_DAYS", "30")),
-                   help="send one follow-up this many days after the first email if no reply (0 = off)")
-    p.add_argument("--followup-template", type=Path, default=HERE / "templates" / "partner_followup_email.txt")
+    p.add_argument("--followup-days", default=os.environ.get("OUTREACH_FOLLOWUP_DAYS", "5,30"),
+                   help="follow-up schedule in days after the first email, e.g. 5,30 (0 = none); "
+                        "templates/partner_followup_<n>_email.txt is used for step n")
     p.add_argument("--per-firm-daily", type=int, default=1, help="max partners at the same firm per day")
     p.add_argument("--delay", type=float, default=20, help="base seconds between sends (plus random jitter)")
     p.add_argument("--start-hour", type=int, default=9)
@@ -551,7 +582,7 @@ def main() -> int:
     p.add_argument("--status", choices=["sent", "failed", "skipped", "replied"], default="sent",
                    help="skipped = not sent and removed from queue (e.g. prior Outlook contact); "
                         "replied = they answered, so no follow-up")
-    p.add_argument("--kind", choices=["initial", "followup"], default="initial")
+    p.add_argument("--kind", choices=["initial", "followup1", "followup2", "followup3"], default="initial")
     p.add_argument("--detail", default="")
     p.add_argument("emails", nargs="+")
     p.set_defaults(func=cmd_record)

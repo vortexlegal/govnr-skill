@@ -1,0 +1,9 @@
+Hi $first_name,
+
+Just bumping my note from last week in case it got buried. If you'd be open to hearing, confidentially, about partner roles similar to your $practice_phrase, a one-line reply is all it takes. If not, no worries at all.
+
+Best,
+$sender_signature
+
+To stop hearing from me, reply "unsubscribe" or email $unsubscribe_email.
+$sender_address
