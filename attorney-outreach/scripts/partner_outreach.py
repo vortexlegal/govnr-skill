@@ -187,8 +187,9 @@ def cmd_prepare(a) -> int:
 
     body_tpl = Template(a.template.read_text(encoding="utf-8"))
     subj_tpl = Template(a.subject)
+    contact = " | ".join(x for x in [a.sender_phone, a.sender_email] if x)
     signature = "\n".join(x for x in [
-        a.sender_name, ", ".join(x for x in [a.sender_title, a.sender_company] if x), a.sender_email] if x)
+        a.sender_name, ", ".join(x for x in [a.sender_title, a.sender_company] if x), contact, a.sender_website] if x)
 
     new_rows, skipped, seen = [], [], set()
     for raw in read_csv(a.contacts):
@@ -445,9 +446,12 @@ def main() -> int:
     p = sub.add_parser("prepare", help="build personalized emails for partners in a CRM export")
     common(p)
     p.add_argument("--contacts", type=Path, required=True)
-    p.add_argument("--sender-title", default="")
-    p.add_argument("--sender-company", required=True)
-    p.add_argument("--sender-address", required=True, help="physical mailing address (CAN-SPAM)")
+    p.add_argument("--sender-title", default=os.environ.get("OUTREACH_SENDER_TITLE", ""))
+    p.add_argument("--sender-company", default=os.environ.get("OUTREACH_SENDER_COMPANY", ""))
+    p.add_argument("--sender-phone", default=os.environ.get("OUTREACH_SENDER_PHONE", ""))
+    p.add_argument("--sender-website", default=os.environ.get("OUTREACH_SENDER_WEBSITE", ""))
+    p.add_argument("--sender-address", default=os.environ.get("OUTREACH_SENDER_ADDRESS", ""),
+                   help="physical mailing address (CAN-SPAM)")
     p.add_argument("--template", type=Path, default=HERE / "templates" / "partner_outreach_email.txt")
     p.add_argument("--subject", default="Your $practice_phrase at $firm")
     p.add_argument("--title-regex", default="", help="override which titles count as partner")

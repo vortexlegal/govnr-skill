@@ -84,3 +84,27 @@ email per match for review. See its `--help` and `examples/positions.csv`.
 
 ## Tests
 `python3 -m unittest discover -s tests`
+
+## Daily Outlook run (what the scheduled task does each weekday)
+
+Sender settings live in `outreach.env` (Jonathan Broder, jbroder@vortexlegal.com,
+330 S. Pineapple Ave., Sarasota, FL 34236, cap 40/day, 1 partner per firm per day).
+State folder: `partner-state/` (keep it between runs).
+
+1. **Process replies first.** Search the Outlook Inbox for replies since the last run
+   (`outlook_email_search`, query "unsubscribe" or "remove", and replies to subjects
+   starting "Your "). For anyone asking to stop: run `suppress <email>`. For interested
+   replies: leave them for Jon and list them in the run summary.
+2. **Build the batch:** `set -a; . ./outreach.env; set +a` then
+   `python3 scripts/partner_outreach.py send --state partner-state --suppress-file <dnu parts> --live`
+   (default transport is Outlook). This writes `partner-state/outbox.json`.
+3. **For each email in outbox.json:**
+   - Check Outlook for prior contact: `outlook_email_search` with `recipient=<to>`.
+     If Jon has emailed this person in the last 180 days, run
+     `record --status skipped --detail "prior Outlook contact" <to>` and move on.
+   - Otherwise send with `outlook_send_mail` (to, subject, body, bodyType text), then
+     run `record <to>`. On an error, run `record --status failed --detail "<error>" <to>`
+     and stop after 3 failures.
+   - Pause ~20–60 seconds between sends.
+4. **Summarize:** sent / skipped / failed counts, unsubscribes processed, and
+   interested replies.
