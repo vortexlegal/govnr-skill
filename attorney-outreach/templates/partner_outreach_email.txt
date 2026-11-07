@@ -1,0 +1,13 @@
+Hi $first_name,
+
+I'm $sender_name with $sender_company. I work with partners considering lateral moves, and your $practice_phrase at $firm$city_phrase caught my attention.
+
+I'm not writing about one specific opening. I'd like to know whether you'd be open to hearing, confidentially, about partner roles similar to what you do now: the same kind of practice on a comparable or stronger platform. If so, a one-line reply is plenty. I'll only bring you opportunities that are a genuine fit.
+
+If the timing isn't right, no problem at all.
+
+Best,
+$sender_signature
+
+To stop hearing from me, reply "unsubscribe" or email $unsubscribe_email.
+$sender_address

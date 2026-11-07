@@ -1,0 +1,11 @@
+id,firstName,lastName,email,currentCompany,currentTitle,practiceAreas,city,yearsExperience,isDnu
+1,Dana,Whitfield,dana.whitfield@example.com,Harlow & Price LLP,Partner,"M&A; Private Equity",New York,16,false
+2,Marcus,Oyelaran,marcus.o@example.com,Brightline Counsel LLP,Equity Partner,Commercial Litigation,Los Angeles,18,false
+3,Priya,Ramanathan,priya.r@example.com,Stonegate Tech Inc.,Product Counsel,Privacy,Seattle,6,false
+4,Tom,Becker,tbecker@example.com,Becker Law PC,Managing Partner,Estate Planning,Austin,25,true
+5,Elena,Sokolova,elena.s@wbd-us.com,Some Firm LLP,Partner,Media,Atlanta,14,false
+6,Sam,Lee,sam.lee@example.com,Big Firm LLP,Associate Partner,Tax,Chicago,8,false
+7,Ana,Ruiz,ana.ruiz@example.com,Ruiz Gold PA,Shareholder,Labor and Employment,Miami,20,false
+8,Ana,Ruiz,ANA.RUIZ@example.com,Ruiz Gold PA,Shareholder,Labor and Employment,Miami,20,false
+9,Lee,Park,lee.park@example.com,Park LLP,Partner,,Boston,12,false
+10,Kim,Ng,kim.ng@example.com,Ng LLP,Partnerships Manager,,Boston,5,false

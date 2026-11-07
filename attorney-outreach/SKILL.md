@@ -1,80 +1,84 @@
 ---
 name: attorney-outreach
-description: Recruit attorneys from a CRM by emailing them about open positions that closely match what they do today. Use when the user wants to reach out to lawyers/attorneys in their CRM (Salesforce, HubSpot, Clio Grow, Bullhorn, or a CSV export) about job openings, lateral moves, or in-house roles similar to their current practice. Matches each attorney to the closest open position, writes a personalized email for each match, and creates drafts for human review. It never sends in bulk without explicit approval.
+description: Email law-firm partners from the CRM (VortexRecruitCRM export or any CRM CSV) to ask whether they'd be open to hearing about partner roles similar to what they do now. Not tied to a specific job opening. Filters to partner titles, applies DNU/unsubscribe/blocked-domain rules, writes a personalized note per partner, and auto-sends up to a daily cap during business hours. Also includes a job-matching mode for a specific list of openings.
 ---
 
-# Attorney Outreach: Matching Attorneys to Similar Roles
+# Attorney Outreach
 
-Goal: for each attorney in the CRM, find the open position that most closely
-resembles their **current** practice (same practice areas, similar seniority,
-right bar admission) and send a short, personal, honest note asking if they'd be
-interested.
+## Partner outreach (main workflow)
 
-## Inputs
+Emails partners about **roles similar to their current practice**. It is not
+about any one opening, so the email never names or describes a job. It names
+their practice and firm and asks whether they're open to hearing about
+comparable partner roles.
 
-1. **Contacts.** A CRM export, or records pulled from a connected CRM tool. Column
-   names are flexible: the script recognizes common aliases (`First Name`,
-   `Job Title`, `Account Name`, `Email Opt Out`, ...). Useful fields: name, email,
-   firm, title, practice areas, bar admissions, years of experience, notes/bio,
-   and an opt-out flag.
-2. **Positions.** The open roles: title, company (can be "Confidential"),
-   location/remote, practice areas, description, min/max years, required bar,
-   comp range, link. See `examples/positions.csv`.
-3. **Sender details.** Name, title, company, reply email, and a physical mailing
-   address (required for commercial email under CAN-SPAM).
+### 1. Get the contacts
+Export candidates from VortexRecruitCRM (or any CRM) as CSV. The script
+recognizes these columns: `firstName`/`First Name`, `lastName`, `email`,
+`currentCompany`, `currentTitle`, `practiceAreas`, `city`, `isDnu`/`DNU`/`Email Opt Out`.
+Also export the CRM's DNU / unsubscribe list and pass it with `--suppress-file`.
 
-If a CRM connector is available (search tools for "crm", "salesforce",
-"hubspot", "contacts"), pull contacts from it and write them to a CSV. Otherwise
-ask the user for an export. If the user has no positions list, ask for one.
-Never invent openings: every email has to describe a real role.
+### 2. Prepare the queue
+```bash
+python3 scripts/partner_outreach.py prepare --state ./partner-state \
+  --contacts crm_export.csv --suppress-file crm_dnu.csv \
+  --sender-name "Jon Broder" --sender-title "Legal Recruiter" \
+  --sender-company "Vortex Legal" --sender-email jbroder@vortexlegal.com \
+  --sender-address "<physical mailing address>"
+```
+- **Partner titles:** Partner, Equity/Managing Partner, Shareholder, Principal and
+  Managing Member are included. Associate Partner, "Partnerships Manager" and staff
+  titles are excluded. Override with `--title-regex`.
+- **Skipped:** CRM DNU, the suppression list, blocked recipient domains
+  (`wbd-us.com`), anyone emailed in the last 180 days (`--recontact-days`),
+  duplicates and invalid emails. Reasons go to `prepare_skipped.csv`.
+- **Safe to re-run:** re-running on a fresh export only queues new partners.
+- **Output:** a sample email is printed. Show it to the user before the first live send.
 
-## Workflow
+### 3. Send (scheduled)
+```bash
+export SENDGRID_API_KEY=...          # or --transport smtp with SMTP_HOST/PORT/USER/PASSWORD
+python3 scripts/partner_outreach.py send --state ./partner-state \
+  --sender-name "Jon Broder" --sender-email jbroder@vortexlegal.com \
+  --daily-cap 40 --live
+```
+- **Dry run by default.** Without `--live` it only lists what it would send and changes nothing.
+- **Limits:** sends at most `--daily-cap` per Eastern-time day, on weekdays between
+  9:00 and 17:00 ET (`--start-hour`/`--end-hour`), with a randomized delay between
+  sends (`--delay`).
+- **Stops early:** refuses to run without credentials, or from a do-not-send-from
+  domain (prividential.ai, chrismooreesq.com, daniellenimoxjohnsonlegal.com).
+  Stops after `--max-failures` failed sends.
+- **Failed sends:** they stay queued and are logged. They are never retried
+  automatically in the same run.
+- **Each email:** plain text, with a `List-Unsubscribe` header, an unsubscribe line,
+  and the mailing address. Tracking pixels and link rewriting are off.
+- **Schedule:** run `send` once each weekday morning, e.g. cron `5 10 * * 1-5`
+  in ET. Re-run `prepare` whenever there's a fresh CRM export.
 
-1. **Collect inputs** (above). Confirm the sender identity and which positions are live.
-2. **Match and draft:**
-   ```bash
-   python3 scripts/match_and_draft.py \
-     --contacts contacts.csv --positions positions.csv --out ./outreach \
-     --sender-name "..." --sender-title "..." --sender-company "..." \
-     --sender-email "..." --sender-address "..." \
-     --min-score 0.35 --top 1
-   ```
-   Scoring = 60% practice-area overlap + 40% TF-IDF text similarity (title,
-   practice areas, notes vs. role title, areas, description), minus
-   penalties for an experience-band mismatch or a missing required bar
-   admission. Contacts are skipped when they are flagged do-not-contact,
-   have an invalid email, are duplicates, or have no close match.
-3. **Review with the user.** Show a table: name, current role, matched position,
-   score, flags. Show 1–2 full sample emails. Call out anything flagged
-   (e.g. "not admitted in NY"). Let the user edit the template
-   (`templates/outreach_email.txt`, `$placeholders`) or individual drafts, and
-   mark approvals (the `approved` column in `drafts.csv`).
-4. **Create drafts, not sends.** Using the connected mail tool (e.g. Outlook
-   `outlook_create_draft`, Gmail create-draft), create one draft per approved
-   row with that row's `to`, `subject`, and `body`. Send only if the user
-   explicitly says to send, and confirm the count first ("Send 37 emails
-   now?"). For large batches, pace the sends to respect rate limits.
-5. **Log back to the CRM** if a connector allows it: add an activity/note
-   ("Outreach re: <position_id>") so the attorney isn't contacted twice.
+### 4. Handle replies
+- **Unsubscribe replies:** `python3 scripts/partner_outreach.py suppress --state ./partner-state a@firm.com`.
+  Also mark them DNU in the CRM.
+- **Interested replies:** handle these in the CRM. `sent_log.csv` records who was
+  emailed and when, so it can be imported back into the CRM.
 
-## Rules
+### Files in `--state`
+`queue.csv` (pending), `sent_log.csv` (every attempt), `suppression.csv`,
+`prepare_skipped.csv`. Keep this folder between runs. It is what prevents
+repeat emails.
 
-- **Truthful.** Describe the real role. The email says the role is similar to
-  their work *because it is* (shared practice areas). It must not claim a
-  personal referral, a prior relationship, or an offer.
-- **Respect opt-outs.** Skip anyone marked do-not-contact or unsubscribed, and
-  honor "unsubscribe" replies. Keep the opt-out line and mailing address in the
-  template.
-- **Confidentiality.** Don't name a confidential client. Don't tell one
-  candidate about another.
-- **One role per person** by default (`--top 1`). Multiple pitches read as spam.
-- **Jurisdiction.** Attorney-solicitation rules don't govern recruiting
-  emails, but anti-spam/privacy law does (CAN-SPAM in the US; CASL in Canada
-  and GDPR/PECR in the EU and UK need consent or a lawful basis). Flag non-US
-  contacts for the user to decide.
+### Rules
+- **Truthful:** never claim a specific opening, a referral, or a prior relationship.
+  The template only asks whether they're open to similar roles.
+- **Opt-outs:** honor them within 10 business days (CAN-SPAM). Keep the unsubscribe
+  line and the physical address.
+- **Outside the US:** flag non-US partners. CASL and GDPR/PECR need consent or a
+  lawful basis before cold email.
+- **Volume:** start with a low cap (20–40/day) on a warmed-up sending domain.
 
-## Files
+## Job-matching mode (specific openings)
+`scripts/match_and_draft.py` matches contacts to a positions CSV and drafts an
+email per match for review. See its `--help` and `examples/positions.csv`.
 
-- `scripts/match_and_draft.py`: matching + drafting (stdlib only)
-- `templates/outreach_email.txt`: email body template
-- `examples/`: sample CRM export and positions list
+## Tests
+`python3 -m unittest discover -s tests`
