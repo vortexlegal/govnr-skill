@@ -315,7 +315,7 @@ def to_html(body: str) -> str:
     No styles, images or tracking."""
     import html
     paras = [p for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
-    return "".join("<p>" + "<br>".join(html.escape(l) for l in p.splitlines()) + "</p>" for p in paras)
+    return "".join("<p>" + "<br>".join(html.escape(l, quote=False) for l in p.splitlines()) + "</p>" for p in paras)
 
 
 def render_body(tpl: Template, vals: dict, seed: str = "") -> str:
