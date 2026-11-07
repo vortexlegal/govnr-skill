@@ -331,6 +331,16 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertTrue(all(60 <= b["pause_seconds_before"] <= 300 for b in batch))
         self.assertTrue(all(b["body_html"].startswith("<p>Hi ") for b in batch))
 
+    def test_summary(self):
+        first = self._outlook_send(cap="2")
+        run("record", "--state", str(self.state), first[0]["to"])
+        run("record", "--state", str(self.state), "--status", "replied", "--detail", "interested", first[1]["to"])
+        code, out = run("summary", "--state", str(self.state))
+        self.assertEqual(code, 0)
+        self.assertIn("First emails sent: 1", out)
+        self.assertIn("Interested, follow up with:", out)
+        self.assertIn(first[1]["to"], out)
+
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")
 

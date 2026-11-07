@@ -6,6 +6,7 @@
 #   run_outreach.sh batch            write this run's batch to state/outbox.json (up to OUTREACH_MAX_PER_RUN)
 #   run_outreach.sh record [args]    log results, e.g. `record a@x.com` or `record --kind followup1 a@x.com`
 #   run_outreach.sh suppress EMAIL.. add opt-outs
+#   run_outreach.sh summary          today's totals and replies (for the end-of-day email)
 #   run_outreach.sh save "message"   commit and push the state
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -29,6 +30,7 @@ case "${1:-}" in
   batch)   sync; $PY send "${COMMON[@]}" --transport outlook --live ;;
   record)  shift; $PY record --state "$STATE_REPO/state" "$@" ;;
   suppress) shift; $PY suppress --state "$STATE_REPO/state" "$@" ;;
+  summary) sync; $PY summary --state "$STATE_REPO/state" ;;
   save)
     cd "$STATE_REPO"; git add -A state
     if git diff --cached --quiet; then echo "nothing to save"; exit 0; fi

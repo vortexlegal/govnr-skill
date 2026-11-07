@@ -731,6 +731,43 @@ def cmd_record(a) -> int:
     return 0
 
 
+def cmd_summary(a) -> int:
+    """Today's activity (ET) as plain text, for the end-of-day email to Jon."""
+    state: Path = a.state
+    today = datetime.now(ET).date()
+    log = [r for r in read_rows(state / "sent_log.csv")
+           if datetime.fromisoformat(r["sent_at"]).astimezone(ET).date() == today]
+    sup = [r for r in read_rows(state / "suppression.csv")
+           if r.get("added_at") and datetime.fromisoformat(r["added_at"]).astimezone(ET).date() == today]
+    def n(kind=None, status="sent"):
+        return sum(1 for r in log if r.get("status") == status and
+                   (kind is None or (r.get("kind") or "initial") == kind))
+    replies = [r for r in log if r.get("status") == "replied"]
+    interested = [r for r in replies if "interest" in (r.get("detail") or "").lower()
+                  and "not interest" not in (r.get("detail") or "").lower()]
+    queue_left = len(read_rows(state / "queue.csv"))
+    lines = [
+        f"Partner outreach, {today:%A %B %-d, %Y}",
+        "",
+        f"First emails sent: {n('initial')}",
+        f"Follow-ups sent: {n('followup1')} (day 5), {n('followup2')} (day 30)",
+        f"Replies: {len(replies)}  |  Opt-outs: {len(sup)}  |  Skipped (prior contact): {n(status='skipped')}  |  Failed: {n(status='failed')}",
+        f"Partners still queued: {queue_left:,}",
+    ]
+    if interested:
+        lines += ["", "Interested, follow up with:"]
+        lines += [f"- {r['name']} ({r['firm']}) <{r['to']}>" for r in interested]
+    other = [r for r in replies if r not in interested]
+    if other:
+        lines += ["", "Other replies:"]
+        lines += [f"- {r['name'] or r['to']} ({r['firm']}): {r.get('detail') or 'replied'}" for r in other]
+    fails = [r for r in log if r.get("status") == "failed"]
+    if fails:
+        lines += ["", "Failed sends:"] + [f"- {r['to']}: {r.get('detail', '')[:120]}" for r in fails]
+    print("\n".join(lines))
+    return 0
+
+
 def cmd_suppress(a) -> int:
     a.state.mkdir(parents=True, exist_ok=True)
     have = load_suppressed(a.state, [])
@@ -810,6 +847,10 @@ def main() -> int:
     p.add_argument("--detail", default="")
     p.add_argument("emails", nargs="+")
     p.set_defaults(func=cmd_record)
+
+    p = sub.add_parser("summary", help="today's activity, for the end-of-day email")
+    p.add_argument("--state", type=Path, required=True)
+    p.set_defaults(func=cmd_summary)
 
     p = sub.add_parser("suppress", help="add emails to the do-not-contact list (e.g. unsubscribe replies)")
     p.add_argument("--state", type=Path, required=True)
