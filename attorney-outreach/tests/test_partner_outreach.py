@@ -276,6 +276,7 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertEqual(po.greeting_name("K C"), "")
         self.assertEqual(po.greeting_name("Anne Marie"), "Anne Marie")
         self.assertEqual(po.greeting_name("Dana"), "Dana")
+        self.assertEqual(po.greeting_name("Open"), "")
         self.assertEqual(po.name_from_email("lisa.colon@saul.com", "Colon"), "Lisa")
         self.assertEqual(po.name_from_email("drew.linnenbom@dinsmore.com", "Linnenbom"), "Drew")
         self.assertEqual(po.name_from_email("rlevy@offitkurman.com", "Levy"), "")

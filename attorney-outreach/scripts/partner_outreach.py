@@ -144,9 +144,15 @@ def short_firm(name: str) -> str:
     return tidy_name(out) if out.isupper() and len(out) > 4 else out
 
 
+NOT_A_NAME = {"open", "unknown", "test", "na", "n/a", "none", "null", "partner", "attorney", "esq", "mr", "mrs",
+              "ms", "dr", "hon", "info", "admin", "office", "contact", "firm", "law", "legal"}
+
+
 def greeting_name(first: str) -> str:
     """The name to greet someone by, or "" if the record only has initials ("K C", "E.")."""
     parts = [p for p in re.split(r"\s+", (first or "").strip()) if p]
+    if parts and parts[0].lower().strip(".") in NOT_A_NAME:
+        return ""
     real = [p for p in parts if len(p.strip(".")) > 1]
     if not real:
         return ""
