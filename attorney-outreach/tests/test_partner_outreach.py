@@ -133,7 +133,7 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertEqual(batch[0]["kind"], "followup1")    # follow-ups go first
         self.assertTrue(fus[a]["subject"].startswith("RE: "))
         self.assertEqual(fus[a]["original_subject"], first[0]["subject"])
-        self.assertIn("last week", fus[a]["body"])
+        self.assertIn("confidential call", fus[a]["body"])
         self.assertIn("123 Main St", fus[a]["body"])
         run("record", "--state", str(self.state), "--kind", "followup1", a, b)
 
@@ -145,7 +145,7 @@ class PartnerOutreachTest(unittest.TestCase):
         fus = self._fus(self._outlook_send(cap="5"))
         self.assertEqual(list(fus), [a])
         self.assertEqual(fus[a]["kind"], "followup2")
-        self.assertIn("last note", fus[a]["body"])
+        self.assertIn("sounding board", fus[a]["body"])
         self.assertIn(first[0]["practice"].split(" and ")[0], fus[a]["body"])
         run("record", "--state", str(self.state), "--kind", "followup2", a)
 
@@ -193,6 +193,21 @@ class PartnerOutreachTest(unittest.TestCase):
         run("prepare", "--state", str(st), *SENDER, "--contacts", str(f), "--sender-company", "V",
             "--sender-address", "X")
         self.assertEqual([r["to"] for r in rows(st / "queue.csv")], ["b@y.com"])
+
+    def test_followups_never_open_with_a_reminder(self):
+        from string import Template
+        for n in (1, 2):
+            tpl = Template((ROOT / "templates" / f"partner_followup_{n}_email.txt").read_text())
+            body = po.render_body(tpl, {"first_name": "Ann", "practice_phrase": "tax practice",
+                                        "practice_work": "tax work", "sender_signature": "J",
+                                        "sender_address": "X", "unsubscribe_email": "j@v.com"})
+            po.check_followup_opening(body)  # must not raise
+        for bad in ["Just bumping my note from last week.", "Following up on my email.",
+                    "I wanted to bring this to the top of your inbox.", "I wanted to bring this to the top of you're inbox.",
+                    "Circling back on the below.", "Checking in on my last note.", "I reached out last month about roles.",
+                    "In case this got buried, a quick question."]:
+            with self.assertRaises(ValueError, msg=bad):
+                po.check_followup_opening(f"Hi Ann,\n\n{bad} More text here.\n")
 
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")

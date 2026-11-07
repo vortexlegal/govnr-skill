@@ -76,6 +76,10 @@ python3 scripts/partner_outreach.py send --state ./partner-state \
 repeat emails.
 
 ### Rules
+- **Follow-up openings:** never open with a reminder ("just bumping this", "following up",
+  "bringing this to the top of your inbox", "circling back", "checking in", "in case it got
+  buried", "I reached out last month"...). Lead with the question. `send` refuses a
+  follow-up template whose first sentence matches these.
 - **Truthful:** never claim a specific opening, a referral, or a prior relationship.
   The template only asks whether they're open to similar roles.
 - **Opt-outs:** honor them within 10 business days (CAN-SPAM). Keep the unsubscribe

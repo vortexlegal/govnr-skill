@@ -1,6 +1,6 @@
 Hi $first_name,
 
-Just bumping my note from last week in case it got buried. If you'd be open to hearing, confidentially, about partner roles similar to your $practice_phrase, a one-line reply is all it takes. If not, no worries at all.
+A quick question: if a firm with a stronger platform for $practice_work wanted to talk, would you take a confidential call? A yes or no is all I need, and I'll only bring you something that genuinely fits.
 
 Best,
 $sender_signature

@@ -212,6 +212,28 @@ def parse_followup_days(value: str) -> list[int]:
     return days
 
 
+# Follow-ups must open with substance, never a reminder ("just bumping this", "following up",
+# "bringing this to the top of your inbox", ...). Checked against the first sentence of the body.
+REMINDER_OPENER_RE = re.compile(
+    r"\b(bump\w*|follow\w*[- ]?up|following|circl\w* back|check\w* in|touch\w* base|"
+    r"top of (?:your|you.re) inbox|resurfac\w*|got (?:lost|buried)|buried|reminder|remind\w*|"
+    r"my (?:last|previous|earlier|prior) (?:note|email|message)|reached out|wanted to (?:bring|make sure)|"
+    r"in case you missed|did you (?:get|see)|haven.t heard|any thoughts on)\b", re.I)
+
+
+def opening_sentence(body: str) -> str:
+    lines = [l for l in body.strip().splitlines() if l.strip()]
+    text = " ".join(lines[1:3]) if lines and re.match(r"^(hi|hello|dear)\b", lines[0], re.I) else " ".join(lines[:2])
+    return re.split(r"(?<=[.?!])\s", text, maxsplit=1)[0]
+
+
+def check_followup_opening(body: str) -> None:
+    first = opening_sentence(body)
+    m = REMINDER_OPENER_RE.search(first)
+    if m:
+        raise ValueError(f"Follow-up opens with a reminder phrase ({m.group(0)!r}): {first!r}")
+
+
 def due_followups(log: list[dict], days: list[int], now: datetime) -> list[tuple[int, dict]]:
     """(step, first-email row) for people due their next follow-up.
 
@@ -436,6 +458,7 @@ def cmd_send(a) -> int:
                      for n in range(1, len(fu_days) + 1)}
         for step, r in due_followups(log, fu_days, datetime.now(timezone.utc)):
             fu_tpl = templates[step]
+            practice_work = (r.get("practice") or "").strip()
             to = r["to"].lower()
             if to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS):
                 continue
@@ -443,9 +466,11 @@ def cmd_send(a) -> int:
             body = render_body(fu_tpl, {
                 "first_name": (r.get("name") or "").split(" ")[0] or "there",
                 "practice_phrase": f"{practice} practice" if practice else "practice",
+                "practice_work": f"{practice} work" if practice else "your practice",
                 "firm": r.get("firm") or "your firm",
                 "sender_signature": sender_signature(a), "sender_address": a.sender_address,
                 "unsubscribe_email": a.unsubscribe_email or a.sender_email})
+            check_followup_opening(body)
             subj = r.get("subject") or ""
             followups.append({"to": to, "name": r.get("name", ""), "firm": r.get("firm", ""),
                               "practice": practice, "kind": f"followup{step}", "original_subject": subj,

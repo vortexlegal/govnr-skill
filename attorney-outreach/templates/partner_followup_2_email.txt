@@ -1,6 +1,6 @@
 Hi $first_name,
 
-I reached out last month about partner roles similar to your $practice_phrase. This is my last note, as I don't want to crowd your inbox. If the timing is ever right, just reply and I'll take it from there. Wishing you a strong finish to the year.
+If a move ever makes sense for your $practice_phrase, whether for a broader platform, better rates or more support for your clients, I'd be glad to be a confidential sounding board. Reply whenever the timing is right. I won't reach out again unless you do.
 
 Best,
 $sender_signature
