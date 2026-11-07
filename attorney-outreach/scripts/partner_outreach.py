@@ -88,6 +88,18 @@ def domain_blocked(email: str, blocked: set[str]) -> bool:
     return any(d == b or d.endswith("." + b) for b in blocked)
 
 
+# Firm leadership is never emailed (Jon's rule): managing partners of any kind, founders,
+# CEOs and other chiefs, chairs, presidents, owners, executive partners.
+LEADERSHIP_RE = re.compile(
+    r"\b(managing|founding|founder\w*|co-?founder\w*|ceo|c\.e\.o|chief|coo|cfo|cmo|cto|cio|clo|"
+    r"chair\w*|vice[- ]chair\w*|president|owner|proprietor|executive partner|executive director|"
+    r"name partner|senior managing|firm leader|head of (?:the )?firm)\b", re.I)
+
+
+def is_leadership(title: str) -> bool:
+    return bool(LEADERSHIP_RE.search(title or ""))
+
+
 def is_partner(title: str, pattern: re.Pattern = PARTNER_RE) -> bool:
     return bool(title) and bool(pattern.search(title)) and not NOT_PARTNER_RE.search(title)
 
@@ -435,6 +447,8 @@ def cmd_prepare(a) -> int:
 
         if not is_partner(c["title"], pattern):
             skip("not a partner title"); continue
+        if is_leadership(c["title"]):
+            skip("firm leadership title (managing/founding partner, CEO, chair...)"); continue
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
             skip("missing/invalid email"); continue
         if truthy(c["do_not_contact"]):
@@ -624,7 +638,8 @@ def cmd_send(a) -> int:
     for row in followups + queue:
         to = row["to"].lower()
         kind = row.get("kind", "initial")
-        if kind == "initial" and (to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS) or to in recent):
+        if kind == "initial" and (to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS) or to in recent
+                                  or is_leadership(row.get("title", ""))):
             continue  # dropped from the queue for good
         fk = firm_key(row.get("firm"))
         bucket = "initial" if kind == "initial" else "followup"

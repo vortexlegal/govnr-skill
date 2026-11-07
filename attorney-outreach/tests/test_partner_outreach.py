@@ -270,6 +270,16 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertEqual([(r["subject"], r["body"]) for r in rows(st2 / "queue.csv")],
                          [(r["subject"], r["body"]) for r in rows(self.state / "queue.csv")])
 
+    def test_leadership_never_emailed(self):
+        for t in ["Managing Partner", "Office Managing Partner", "Co-Managing Partner", "Deputy Managing Partner",
+                  "Founding Partner", "Founder and Managing Partner", "Co-Founder", "CEO", "Chief Executive Officer",
+                  "Chair, Litigation Group", "Chairman", "Vice Chair", "President", "Owner", "Managing Shareholder",
+                  "Managing Member", "Executive Partner", "Name Partner"]:
+            self.assertTrue(po.is_leadership(t), t)
+        for t in ["Partner", "Equity Partner", "Shareholder", "Senior Partner", "Income Partner", "Principal"]:
+            self.assertFalse(po.is_leadership(t), t)
+        self.assertNotIn("tbecker@example.com", {r["to"] for r in rows(self.state / "queue.csv")})
+
     def test_greeting_name(self):
         self.assertEqual(po.greeting_name("E Chase"), "Chase")
         self.assertEqual(po.greeting_name("E."), "")
