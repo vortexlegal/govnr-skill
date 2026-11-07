@@ -924,7 +924,10 @@ def cmd_send(a) -> int:
     suppressed = load_suppressed(state, a.suppress_file)
     recent = recently_emailed(state, a.recontact_days)
     queue = read_rows(state / "queue.csv")
-    firm_key = lambda f: re.sub(r"[^a-z0-9]+", " ", (f or "").lower()).strip()
+    def firm_key(f):
+        # Placeholders like "Law Office" are not one firm: they don't count toward the per-firm limit.
+        f = (f or "").strip(" .,")
+        return "" if GENERIC_FIRM_RE.match(f) else re.sub(r"[^a-z0-9]+", " ", f.lower()).strip()
     firms_today: dict[str, int] = {}
     for r in log:
         if sent_on_today(r) and (r.get("kind") or "initial") == "initial":
@@ -978,7 +981,8 @@ def cmd_send(a) -> int:
         fk = firm_key(row.get("firm"))
         bucket = "initial" if kind == "initial" else "followup"
         # One partner per firm per day applies to first emails; follow-ups are already spread out.
-        firm_full = kind == "initial" and fk and firms_today.get(fk, 0) >= a.per_firm_daily
+        firm_full = (kind == "initial" and fk and a.per_firm_daily > 0
+                     and firms_today.get(fk, 0) >= a.per_firm_daily)
         if used[bucket] >= limits[bucket] or failed >= a.max_failures or firm_full:
             if kind == "initial":
                 remaining.append(row)
@@ -1201,7 +1205,8 @@ def main() -> int:
     p.add_argument("--followup-days", default=os.environ.get("OUTREACH_FOLLOWUP_DAYS", "5,30"),
                    help="follow-up schedule in days after the first email, e.g. 5,30 (0 = none); "
                         "templates/partner_followup_<n>_email.txt is used for step n")
-    p.add_argument("--per-firm-daily", type=int, default=1, help="max partners at the same firm per day")
+    p.add_argument("--per-firm-daily", type=int, default=1,
+                   help="max first emails to people at the same firm per day; 0 = no limit")
     p.add_argument("--delay", type=float, default=20, help="base seconds between sends (plus random jitter)")
     p.add_argument("--start-hour", type=int, default=int(os.environ.get("OUTREACH_START_HOUR", "9")))
     p.add_argument("--end-hour", type=int, default=int(os.environ.get("OUTREACH_END_HOUR", "17")))

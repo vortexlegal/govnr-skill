@@ -64,7 +64,7 @@ case "${1:-}" in
     done ;;
   batch)
     a=${2:?audience: partner|associate|untitled}; pull
-    $PY send --state "$V/state-personal-$a" --audience "$a" "${SUPPRESS[@]}" --transport outlook --live ;;
+    $PY send --state "$V/state-personal-$a" --audience "$a" "${SUPPRESS[@]}" --per-firm-daily 0 --transport outlook --live ;;  # no per-firm limit (Jon, personal addresses)
   record)
     a=${2:?audience}; shift 2; $PY record --state "$V/state-personal-$a" "$@" ;;
   *) sed -n '2,10p' "$0"; exit 1 ;;

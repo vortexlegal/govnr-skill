@@ -490,6 +490,19 @@ class PersonalEmailTest(unittest.TestCase):
         for f in (ROOT / "templates").glob("*.txt"):
             self.assertNotIn("like yours", f.read_text().lower(), f.name)
 
+    def test_per_firm_limit_off_and_placeholder_firms(self):
+        q = [{"contact_key": str(i), "to": f"p{i}@gmail.com", "name": f"P{i} X", "firm": f, "title": "Partner",
+              "practice": "", "subject": "Hi", "body": "Hi\n\nBest regards,\nJ", "prepared_at": ""}
+             for i, f in enumerate(["Kirkland & Ellis LLP", "Kirkland & Ellis LLP", "Law Office", "Law Office"])]
+        def batch(*extra):
+            st = self.dir / ("s" + "".join(extra)); st.mkdir(exist_ok=True)
+            po.write_rows(st / "queue.csv", po.QUEUE_COLS, q)
+            run("send", "--state", str(st), *SENDER, "--sender-address", "1 Main", "--live", "--ignore-hours",
+                "--max-per-run", "10", "--daily-cap", "10", *extra)
+            return sorted(r["to"] for r in __import__("json").loads((st / "outbox.json").read_text()))
+        self.assertEqual(batch(), ["p0@gmail.com", "p2@gmail.com", "p3@gmail.com"])  # placeholders aren't a firm
+        self.assertEqual(len(batch("--per-firm-daily", "0")), 4)
+
     def test_require_verified_needs_file(self):
         code, _ = self.prepare("--require-verified")
         self.assertEqual(code, 2)
