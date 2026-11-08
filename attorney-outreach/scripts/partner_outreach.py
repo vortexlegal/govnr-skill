@@ -1031,7 +1031,7 @@ def cmd_send(a) -> int:
         if a.transport == "outlook":
             # Sent by the Outlook connector; results come back via `record`.
             # Follow-ups are sent as a reply in the original thread.
-            batch.append({"kind": kind, "pause_seconds_before": random.randint(60, 300), **{k: row.get(k, "") for k in
+            batch.append({"kind": kind, "pause_seconds_before": random.randint(a.pause_min, a.pause_max), **{k: row.get(k, "") for k in
                           ("to", "name", "firm", "practice", "subject", "body", "original_subject", "original_sent_at")},
                           "body_html": row.get("body_html") or to_html(row.get("body", ""))})
             if kind == "initial":
@@ -1239,6 +1239,8 @@ def main() -> int:
     p.add_argument("--per-firm-daily", type=int, default=1,
                    help="max first emails to people at the same firm per day; 0 = no limit")
     p.add_argument("--delay", type=float, default=20, help="base seconds between sends (plus random jitter)")
+    p.add_argument("--pause-min", type=int, default=60, help="Outlook batch: shortest pause before each email, seconds")
+    p.add_argument("--pause-max", type=int, default=300, help="Outlook batch: longest pause before each email, seconds")
     p.add_argument("--start-hour", type=int, default=int(os.environ.get("OUTREACH_START_HOUR", "9")))
     p.add_argument("--end-hour", type=int, default=int(os.environ.get("OUTREACH_END_HOUR", "17")))
     p.add_argument("--ignore-hours", action="store_true")
