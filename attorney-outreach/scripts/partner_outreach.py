@@ -281,10 +281,23 @@ def fix_subject(subject: str) -> str:
 
 
 def sender_signature(a) -> str:
+    """Name, title, phone/email and website. The mailing address is not in the signature (Jon's rule):
+    it goes at the very bottom of the email, in small type (see with_footer / to_html)."""
     contact = " | ".join(x for x in [a.sender_phone, a.sender_email] if x)
     return "\n".join(x for x in [
-        a.sender_name, ", ".join(x for x in [a.sender_title, a.sender_company] if x), contact, a.sender_website,
-        getattr(a, "sender_address", "")] if x)
+        a.sender_name, ", ".join(x for x in [a.sender_title, a.sender_company] if x), contact, a.sender_website] if x)
+
+
+# The mailing address, set from --sender-address; to_html prints this paragraph small and grey.
+FOOTER_TEXT = ""
+
+
+def with_footer(body: str, address: str) -> str:
+    """Body plus the mailing address as its own last paragraph (CAN-SPAM), below the signature."""
+    body = body.rstrip()
+    if not address or body.endswith(address):
+        return body + "\n"
+    return body + "\n\n" + address + "\n"
 
 
 # CRM practice tags -> how a recruiter would say them.
@@ -374,7 +387,14 @@ def to_html(body: str) -> str:
     No styles, images or tracking."""
     import html
     paras = [p for p in re.split(r"\n\s*\n", body.strip()) if p.strip()]
-    return "".join("<p>" + "<br>".join(html.escape(l, quote=False) for l in p.splitlines()) + "</p>" for p in paras)
+    out = []
+    for p in paras:
+        inner = "<br>".join(html.escape(l, quote=False) for l in p.splitlines())
+        if FOOTER_TEXT and p.strip() == FOOTER_TEXT.strip():
+            out.append(f'<p style="font-size:10px;color:#888888;margin-top:18px"><small>{inner}</small></p>')
+        else:
+            out.append("<p>" + inner + "</p>")
+    return "".join(out)
 
 
 def quoted_reply_html(followup_body: str, original: dict | None, sender_name: str, sender_email: str) -> str:
@@ -776,7 +796,7 @@ def cmd_prepare(a) -> int:
             "sender_signature": signature, "sender_address": a.sender_address,
             "unsubscribe_email": a.unsubscribe_email or a.sender_email,
         }
-        body = render_body(body_tpl, vals, seed=email)
+        body = with_footer(render_body(body_tpl, vals, seed=email), a.sender_address)
         import hashlib
         # Only subjects this person's record can fill: none that would print "practice" or "your firm".
         fits = [t for t in subjects if (practice or "$practice" not in t) and (vals["firm"] != "your firm" or "$firm" not in t)]
@@ -994,6 +1014,7 @@ def cmd_send(a) -> int:
                 "firm": r.get("firm") or "your firm",
                 "sender_signature": sender_signature(a), "sender_address": a.sender_address,
                 "unsubscribe_email": a.unsubscribe_email or a.sender_email}, seed=f"{to}:followup{step}")
+            body = with_footer(body, a.sender_address)
             check_followup_opening(body)
             subj = r.get("subject") or ""
             followups.append({"to": to, "name": r.get("name", ""), "firm": r.get("firm", ""),
@@ -1271,6 +1292,8 @@ def main() -> int:
     p.set_defaults(func=cmd_suppress)
 
     a = ap.parse_args()
+    global FOOTER_TEXT
+    FOOTER_TEXT = getattr(a, "sender_address", "") or os.environ.get("OUTREACH_SENDER_ADDRESS", "")
     if a.cmd in ("prepare", "send") and (not a.sender_name or not a.sender_email):
         ap.error("--sender-name and --sender-email are required (or set OUTREACH_SENDER_NAME / OUTREACH_SENDER_EMAIL)")
     return a.func(a)
