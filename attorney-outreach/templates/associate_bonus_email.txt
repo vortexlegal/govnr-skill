@@ -1,0 +1,14 @@
+Hi $first_name,
+
+[[I am a legal recruiter with VortexLegal.||I am a legal recruiter with VortexLegal, and much of my work is with associates.]] $about_line
+
+[[A lot of associates put a move on hold until bonuses are paid.||Most associates wait for bonuses to hit before they think about moving.]] [[You may not have to.||That wait often isn't necessary.]]
+
+[[Firms are still hiring as the year winds down, and many will match your year-end bonus with a sign-on bonus.||Firms are still hiring into the new year, and many will cover the year-end bonus you'd leave behind with a sign-on bonus.]] [[In effect, you get your bonus early.||You get your bonus early, and your next step starts sooner.]]
+
+[[Don't put your career on hold because it's the end of the year.||There's no reason to put your career on hold just because the year is ending.]]
+
+[[Worth a quick conversation?||Would you be open to a quick, confidential call?]]
+
+Best regards,
+$sender_signature
