@@ -36,7 +36,7 @@ prepare_all() {
       --contacts "$W/titled.csv" --verified-file "$W/titled.csv" \
       --other-state "$V/state-personal-associate" --other-state "$V/state-personal-untitled" | sed -n '1,2p'
   $PY prepare --state "$V/state-personal-associate" --audience associate "${BASE[@]}" \
-      --contacts "$W/titled.csv" --verified-file "$W/titled.csv" \
+      --contacts "$W/titled.csv" --verified-file "$W/titled.csv" "${ASSOC_TPL[@]}" \
       --other-state "$V/state-personal-partner" --other-state "$V/state-personal-untitled" | sed -n '1,2p'
   $PY prepare --state "$V/state-personal-untitled" --audience untitled "${BASE[@]}" \
       --contacts "$W/untitled.csv" --verified-file "$W/untitled.csv" \
@@ -46,6 +46,20 @@ count() { [ -f "$1" ] && python3 -c "import csv,sys;csv.field_size_limit(10**9);
 
 SUPPRESS=(--suppress-file "$V/crm/dnu_all.csv" --suppress-file "$W/crm_dnu.csv")
 for f in "$V"/crm/exclude_*.csv; do [ -e "$f" ] && SUPPRESS+=(--suppress-file "$f"); done
+# Seasonal first email for associates: "get your bonus early" through Dec 31 (Eastern), then the regular
+# opener. When the season changes, unsent associate first emails are re-rendered on the next sync.
+if [ "$(TZ=America/New_York date +%Y%m%d)" -le 20261231 ]; then
+  ASSOC_TPL=(--template "$HERE/templates/associate_bonus_email.txt" --subjects "$HERE/templates/associate_bonus_subjects.txt"); SEASON=bonus-2026
+else
+  ASSOC_TPL=(); SEASON=regular
+fi
+season_check() {
+  local m="$V/state-personal-associate/template_season"
+  if [ "$(cat "$m" 2>/dev/null)" != "$SEASON" ]; then
+    rm -f "$V/state-personal-associate/queue.csv" "$V/state-personal-associate/prepare_skipped.csv"
+    mkdir -p "$V/state-personal-associate"; echo "$SEASON" > "$m"; echo "associate first email: $SEASON (unsent emails re-rendered)"
+  fi
+}
 BASE=(--email-type personal "${SUPPRESS[@]}" --firm-domains-from "$V/crm/partners_loaded.csv"
       --take-over-from "$V/state" --require-verified)
 
@@ -54,6 +68,7 @@ case "${1:-}" in
     pull
     declare -A before; for c in partner associate untitled; do before[$c]=$(count "$V/state-personal-$c/queue.csv"); done
     python3 "$HERE/scripts/crm_sync.py" --out "$W"
+    season_check
     prepare_all
     summary="CRM sync $(date -u +%F):"
     for c in partner associate untitled; do
@@ -62,12 +77,11 @@ case "${1:-}" in
     echo "$summary"
     save "$summary" ;;
   rebuild)
-    # Re-render every queued email from the current templates (after a wording change). Only before
-    # anything has been sent from these drips: once a drip has a send log, the queue is left alone.
+    # Re-render every queued (unsent) first email from the current templates after a wording change.
+    # Safe after sending starts: queue.csv only holds first emails not yet sent, follow-ups are written
+    # at send time, and anyone already emailed is skipped by the send log.
     pull
-    for c in partner associate untitled; do
-      if [ -s "$V/state-personal-$c/sent_log.csv" ]; then echo "Refusing: $c has already sent email; rebuild would change live threads." >&2; exit 2; fi
-    done
+    season_check
     for c in partner associate untitled; do rm -f "$V/state-personal-$c/queue.csv" "$V/state-personal-$c/prepare_skipped.csv"; done
     prepare_all
     summary="Rebuild from current templates:"

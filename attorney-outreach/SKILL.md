@@ -183,7 +183,10 @@ is in `outreach.env`.
 `./run_personal_sync.sh sync` (once each weekday) pulls, re-runs `prepare` for the three drips (only
 new people are added; anyone queued, sent or suppressed is skipped), and commits the state to VLCRM.
 It never sends. The personal drips have no per-firm daily limit (`--per-firm-daily 0`, Jon's choice: the
-emails go to personal addresses); the work-email campaign keeps 1 per firm per day. `status` shows the counts; `batch <audience>` builds a send batch only after Jon
+emails go to personal addresses); the work-email campaign keeps 1 per firm per day. Through Dec 31, associates' first email is the seasonal
+"Get your bonus early" note (`templates/associate_bonus_email.txt`, `associate_bonus_subjects.txt`; Jon:
+associates only, "many firms will match", not a promise); the first sync in January re-renders unsent
+associate emails with the regular opener. `status` shows the counts; `batch <audience>` builds a send batch only after Jon
 approved sending for that drip.
 
 ## Job-matching mode (specific openings)
