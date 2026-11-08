@@ -1,0 +1,14 @@
+Hi $first_name,
+
+[[I am a legal recruiter with VortexLegal.||I am a legal recruiter with VortexLegal, focused on partner moves.]] $about_line
+
+[[Year-end is when a lot of partners take a hard look at their platform.||The end of the year is when many partners ask whether they're on the right platform.]] [[If a change makes sense, January is the cleanest time to make it.||January is the cleanest time to make a move.]]
+
+[[Your collections, origination credit and compensation start fresh, and your clients start the year with you.||Your book, credit and compensation reset, so the whole year builds on the new platform.]]
+
+[[Several of my clients are adding partners with portable books, with deep resources and rate flexibility.||A number of my clients want partners with portable books and are talking now, ahead of the new year.]]
+
+[[Would you be open to a quick, confidential call?||Worth a quick conversation?]]
+
+Best regards,
+$sender_signature

@@ -33,7 +33,7 @@ save() {
 }
 prepare_all() {
   $PY prepare --state "$V/state-personal-partner" --audience partner "${BASE[@]}" \
-      --contacts "$W/titled.csv" --verified-file "$W/titled.csv" \
+      --contacts "$W/titled.csv" --verified-file "$W/titled.csv" "${PARTNER_TPL[@]}" \
       --other-state "$V/state-personal-associate" --other-state "$V/state-personal-untitled" | sed -n '1,2p'
   $PY prepare --state "$V/state-personal-associate" --audience associate "${BASE[@]}" \
       --contacts "$W/titled.csv" --verified-file "$W/titled.csv" "${ASSOC_TPL[@]}" \
@@ -46,19 +46,25 @@ count() { [ -f "$1" ] && python3 -c "import csv,sys;csv.field_size_limit(10**9);
 
 SUPPRESS=(--suppress-file "$V/crm/dnu_all.csv" --suppress-file "$W/crm_dnu.csv")
 for f in "$V"/crm/exclude_*.csv; do [ -e "$f" ] && SUPPRESS+=(--suppress-file "$f"); done
-# Seasonal first email for associates: "get your bonus early" through Dec 31 (Eastern), then the regular
-# opener. When the season changes, unsent associate first emails are re-rendered on the next sync.
+# Seasonal first emails through Dec 31 (Eastern): associates "get your bonus early", partners "start the
+# new year on the right platform"; then the regular openers. When the season changes, unsent first
+# emails are re-rendered on the next sync.
 if [ "$(TZ=America/New_York date +%Y%m%d)" -le 20261231 ]; then
-  ASSOC_TPL=(--template "$HERE/templates/associate_bonus_email.txt" --subjects "$HERE/templates/associate_bonus_subjects.txt"); SEASON=bonus-2026
+  ASSOC_TPL=(--template "$HERE/templates/associate_bonus_email.txt" --subjects "$HERE/templates/associate_bonus_subjects.txt")
+  PARTNER_TPL=(--template "$HERE/templates/partner_newyear_email.txt" --subjects "$HERE/templates/partner_newyear_subjects.txt")
+  SEASON=yearend-2026
 else
-  ASSOC_TPL=(); SEASON=regular
+  ASSOC_TPL=(); PARTNER_TPL=(); SEASON=regular
 fi
 season_check() {
-  local m="$V/state-personal-associate/template_season"
-  if [ "$(cat "$m" 2>/dev/null)" != "$SEASON" ]; then
-    rm -f "$V/state-personal-associate/queue.csv" "$V/state-personal-associate/prepare_skipped.csv"
-    mkdir -p "$V/state-personal-associate"; echo "$SEASON" > "$m"; echo "associate first email: $SEASON (unsent emails re-rendered)"
-  fi
+  local c m
+  for c in partner associate; do
+    m="$V/state-personal-$c/template_season"
+    if [ "$(cat "$m" 2>/dev/null)" != "$SEASON" ]; then
+      rm -f "$V/state-personal-$c/queue.csv" "$V/state-personal-$c/prepare_skipped.csv"
+      mkdir -p "$V/state-personal-$c"; echo "$SEASON" > "$m"; echo "$c first email: $SEASON (unsent emails re-rendered)"
+    fi
+  done
 }
 BASE=(--email-type personal "${SUPPRESS[@]}" --firm-domains-from "$V/crm/partners_loaded.csv"
       --take-over-from "$V/state" --require-verified)

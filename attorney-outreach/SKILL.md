@@ -185,7 +185,8 @@ new people are added; anyone queued, sent or suppressed is skipped), and commits
 It never sends. The personal drips have no per-firm daily limit (`--per-firm-daily 0`, Jon's choice: the
 emails go to personal addresses); the work-email campaign keeps 1 per firm per day. Through Dec 31, associates' first email is the seasonal
 "Get your bonus early" note (`templates/associate_bonus_email.txt`, `associate_bonus_subjects.txt`; Jon:
-associates only, "many firms will match", not a promise); the first sync in January re-renders unsent
+associates only, "many firms will match", not a promise); partners get "Start the new year on the right platform"
+(`templates/partner_newyear_email.txt`, `partner_newyear_subjects.txt`) for the same period; the first sync in January re-renders unsent
 associate emails with the regular opener. `status` shows the counts; `batch <audience>` builds a send batch only after Jon
 approved sending for that drip.
 
