@@ -66,7 +66,7 @@ season_check() {
     fi
   done
 }
-BASE=(--email-type personal "${SUPPRESS[@]}" --firm-domains-from "$V/crm/partners_loaded.csv"
+BASE=(--email-type personal "${SUPPRESS[@]}" --firm-domains-from "$V/crm/partners_loaded.csv" --firm-domains-from "$V/crm/extra_law_firms.csv"
       --take-over-from "$V/state" --require-verified)
 
 case "${1:-}" in

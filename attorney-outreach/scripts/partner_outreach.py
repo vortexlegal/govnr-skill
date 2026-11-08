@@ -556,16 +556,25 @@ LAWYER_HINT_RE = re.compile(r"(esq|atty|lawyer|\blaw|law\b|jd\b|\bjd)", re.I)
 SOLO_PRACTICE_RE = re.compile(r"^\s*(the\s+)?law\s+offices?\b|\blaw\s+offices?\s+of\b|^\s*(the\s+)?law\s*$", re.I)
 
 
+def _firm_words(name: str) -> list[str]:
+    return re.sub(r"[^a-z ]+", " ", (name or "").lower().replace("’", "").replace("'", "")).split()
+
+
 def known_firms(paths: list[Path]) -> set[str]:
-    """Short names of firms seen in partner exports (e.g. "womble bond", "gordon rees")."""
-    out = set()
+    """Firm names from the partner exports (and the reviewed extra list): each firm's short name, plus
+    its first two words when 3+ partners share them ("cozen o connor", "fisher phillips")."""
+    out, prefixes = set(), {}
     for p in paths:
         for r in read_rows(p):
             low = {k.strip().lower(): v for k, v in r.items() if k}
-            f = short_firm(low.get("current_company") or low.get("firm") or "").lower()
+            name = low.get("current_company") or low.get("firm") or ""
+            f = short_firm(name).lower()
             if len(f) > 3:
                 out.add(f)
-    return out
+            w = _firm_words(name)
+            if len(w) >= 2:
+                k = " ".join(w[:2]); prefixes[k] = prefixes.get(k, 0) + (3 if "firm" in low else 1)
+    return out | {k for k, n in prefixes.items() if n >= 3}
 
 
 def looks_like_firm_lawyer(company: str, email: str, name: str, firms: set[str]) -> bool:
@@ -575,7 +584,9 @@ def looks_like_firm_lawyer(company: str, email: str, name: str, firms: set[str])
     if company:
         if NOT_LAW_FIRM_RE.search(company):
             return False
-        return bool(LAW_FIRM_RE.search(company)) or short_firm(company).lower() in firms
+        w = _firm_words(company)
+        return (bool(LAW_FIRM_RE.search(company)) or short_firm(company).lower() in firms
+                or (len(w) >= 2 and " ".join(w[:2]) in firms))
     local = email.split("@")[0]
     return bool(LAWYER_HINT_RE.search(local) or re.search(r"\besq\b", name, re.I))
 
