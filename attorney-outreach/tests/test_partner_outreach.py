@@ -466,6 +466,10 @@ class PersonalEmailTest(unittest.TestCase):
         self.assertFalse(po.looks_like_firm_lawyer("Legal Aid", "a@gmail.com", "A", set()))
         self.assertFalse(po.looks_like_firm_lawyer("Office of Principle Legal Advisor", "a@gmail.com", "A", set()))
         self.assertTrue(po.looks_like_firm_lawyer("Law Offices of Amanda Chacon", "a@gmail.com", "A", set()))
+        for f in ["Law Offices of Amanda Chacon", "The Law Office of Bree Rials, LLC", "LAW OFFICE", "The Law", "Law Offices"]:
+            self.assertTrue(po.SOLO_PRACTICE_RE.search(f), f)
+        for f in ["Jun He Law Offices LLC", "Lawyers for Justice, PC", "Sophia Law Group, LLP", "Lawson & Weitzen"]:
+            self.assertFalse(po.SOLO_PRACTICE_RE.search(f), f)
         self.assertTrue(po.is_personal_domain("a@lawnet.ucla.edu"))
         self.assertTrue(po.is_personal_domain("a@alumni.stanford.edu"))
         self.assertFalse(po.is_personal_domain("a@shefskylaw.com"))

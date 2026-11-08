@@ -551,6 +551,11 @@ NOT_LAW_FIRM_RE = re.compile(
 LAWYER_HINT_RE = re.compile(r"(esq|atty|lawyer|\blaw|law\b|jd\b|\bjd)", re.I)
 
 
+# Solo practices and truncated imports ("Law Offices of Amanda Chacon", "Law Office", "The Law"):
+# skipped in the no-title drip (Jon: a partner/associate move pitch fits them least).
+SOLO_PRACTICE_RE = re.compile(r"^\s*(the\s+)?law\s+offices?\b|\blaw\s+offices?\s+of\b|^\s*(the\s+)?law\s*$", re.I)
+
+
 def known_firms(paths: list[Path]) -> set[str]:
     """Short names of firms seen in partner exports (e.g. "womble bond", "gordon rees")."""
     out = set()
@@ -705,6 +710,8 @@ def cmd_prepare(a) -> int:
                 skip("has a title (use the partner/associate campaigns)"); continue
             if not looks_like_firm_lawyer(c["firm"], email, name, firms):
                 skip("no title, and employer isn't a law firm"); continue
+            if SOLO_PRACTICE_RE.search(c["firm"].strip(" .,")):
+                skip("solo practice / bare 'Law Office' employer"); continue
         elif a.audience == "associate" and not a.title_regex:
             if not is_associate(c["title"]):
                 skip("not an associate title"); continue

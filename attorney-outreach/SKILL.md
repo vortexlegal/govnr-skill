@@ -119,7 +119,8 @@ repeat emails.
 **No title on record.** `--audience untitled` takes records with an empty title, keeps only those whose
 employer looks like a law firm (LLP/PC/PLLC/Law/Legal/"& Associates", or a firm name from the partner
 export passed as `--firm-domains-from`) or, with no employer, whose email/name says esq/law/atty.
-Government offices, schools, staffing and in-house employers are skipped. `templates/untitled_*.txt`
+Government offices, schools, staffing and in-house employers are skipped. So are solo practices and truncated
+imports ("Law Offices of …", a bare "Law Office" or "The Law"), Jon's rule. `templates/untitled_*.txt`
 never says partner, associate or "roles like yours", and the opening line uses only the details on
 record (no "your firm"; placeholder employers such as "Law Offices" are left out).
 
