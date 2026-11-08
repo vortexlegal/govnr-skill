@@ -5,7 +5,7 @@
 #   run_personal_sync.sh sync               pull CRM changes, queue new people in all three drips, save
 #   run_personal_sync.sh rebuild            re-render all queued emails from the current templates (before any send)
 #   run_personal_sync.sh status             people queued / sent per drip
-#   run_personal_sync.sh batch <audience>   write that drip's send batch (partner|associate|untitled); sends nothing
+#   run_personal_sync.sh batch <audience> [send options]   write that drip's Outlook batch (outbox.json); sends nothing itself
 #   run_personal_sync.sh record <audience> [args]   log sends for that drip
 #
 # Nothing here sends email. `sync` only adds people to queues; sending is a separate, approved step.
@@ -99,8 +99,8 @@ case "${1:-}" in
       echo "$c: queued $(count "$V/state-personal-$c/queue.csv"), log rows $(count "$V/state-personal-$c/sent_log.csv")"
     done ;;
   batch)
-    a=${2:?audience: partner|associate|untitled}; pull
-    $PY send --state "$V/state-personal-$a" --audience "$a" "${SUPPRESS[@]}" --per-firm-daily 0 --transport outlook --live ;;  # no per-firm limit (Jon, personal addresses)
+    a=${2:?audience: partner|associate|untitled}; shift 2; pull
+    $PY send --state "$V/state-personal-$a" --audience "$a" "${SUPPRESS[@]}" --per-firm-daily 0 --transport outlook --live "$@" ;;  # no per-firm limit (Jon, personal addresses)
   record)
     a=${2:?audience}; shift 2; $PY record --state "$V/state-personal-$a" "$@" ;;
   *) sed -n '2,10p' "$0"; exit 1 ;;
