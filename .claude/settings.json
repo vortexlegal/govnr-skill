@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Microsoft_365__outlook_send_mail",
+      "mcp__Microsoft_365__outlook_email_search",
+      "mcp__Microsoft_365__get_me",
+      "mcp__Microsoft_365__read_resource",
+      "Bash(./run_personal_sync.sh *)",
+      "Bash(/home/user/govnr-skill/attorney-outreach/run_personal_sync.sh *)",
+      "Bash(sleep *)"
+    ]
+  }
+}
