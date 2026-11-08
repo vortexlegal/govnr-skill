@@ -884,10 +884,12 @@ def send_sendgrid(a, row) -> tuple[bool, str]:
         "from": {"email": a.sender_email, "name": a.sender_name},
         "reply_to": {"email": a.reply_to or a.sender_email},
         "subject": row["subject"],
-        "content": [{"type": "text/plain", "value": row["body"]}],
+        "content": [{"type": "text/plain", "value": row["body"]},
+                    {"type": "text/html", "value": row.get("body_html") or to_html(row["body"])}],
         "headers": {"List-Unsubscribe": f"<mailto:{unsub}?subject=unsubscribe>"},
-        "categories": ["partner-outreach"],
-        "tracking_settings": {"click_tracking": {"enable": False}, "open_tracking": {"enable": False}},
+        "categories": [getattr(a, "category", "") or "attorney-outreach"],
+        "tracking_settings": {"click_tracking": {"enable": False}, "open_tracking": {"enable": False},
+                              "subscription_tracking": {"enable": False}},
     }
     req = urllib.request.Request("https://api.sendgrid.com/v3/mail/send", data=json.dumps(payload).encode(),
                                  headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
