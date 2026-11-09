@@ -1206,6 +1206,61 @@ def cmd_record(a) -> int:
     return 0
 
 
+def cmd_send_outbox(a) -> int:
+    """Send this run's outbox.json through SendGrid in one go (no per-email approvals), logging each send.
+    Entries already logged since the outbox was written (e.g. skipped for prior contact) are left out."""
+    state: Path = a.state
+    outbox = state / "outbox.json"
+    if not outbox.exists():
+        print("No outbox.json: run `batch` first."); return 1
+    built = datetime.fromtimestamp(outbox.stat().st_mtime, timezone.utc)
+    entries = json.loads(outbox.read_text())
+    handled = set()
+    for r in read_rows(state / "sent_log.csv"):
+        try:
+            when = datetime.fromisoformat(r["sent_at"])
+        except (KeyError, ValueError):
+            continue
+        if when >= built - timedelta(seconds=5):
+            handled.add((r["to"].lower(), r.get("kind") or "initial"))
+            if r.get("status") == "replied":
+                handled.add((r["to"].lower(), "*"))
+    todo = [e for e in entries if (e["to"].lower(), e["kind"]) not in handled and (e["to"].lower(), "*") not in handled]
+    if not todo:
+        print("Nothing left to send in this outbox."); return 0
+    if domain_blocked(a.sender_email, BLOCKED_SENDER_DOMAINS):
+        print(f"Refusing: {domain(a.sender_email)} is on the do-not-send-from list.", file=sys.stderr); return 2
+    queue = read_rows(state / "queue.csv")
+    sent_initial, sent_n, failed = set(), 0, 0
+    for i, e in enumerate(todo):
+        if i:
+            time.sleep(random.uniform(a.min_delay, a.max_delay))
+        ok, detail = send_sendgrid(a, e)
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        append_row(state / "sent_log.csv", LOG_COLS, {
+            "sent_at": now, "to": e["to"].lower(), "name": e.get("name", ""), "firm": e.get("firm", ""),
+            "subject": e.get("subject", ""), "transport": "sendgrid", "status": "sent" if ok else "failed",
+            "detail": detail, "kind": e["kind"], "practice": e.get("practice", "")})
+        if ok:
+            sent_n += 1
+            print(f"sent    {e['kind']:<9} {e['to']}")
+            if e["kind"] == "initial":
+                sent_initial.add(e["to"].lower())
+                with (state / "originals.jsonl").open("a", encoding="utf-8") as f:
+                    f.write(json.dumps({"to": e["to"].lower(), "name": e.get("name", ""), "subject": e.get("subject", ""),
+                                        "sent_at": now, "body": e.get("body", "")}) + "\n")
+        else:
+            failed += 1
+            print(f"FAILED  {e['kind']:<9} {e['to']}: {detail}", file=sys.stderr)
+            if re.match(r"HTTP (401|403|429)", detail) or failed >= a.max_failures:
+                print("Stopping: SendGrid refused or rate-limited the send.", file=sys.stderr)
+                break
+    if sent_initial:
+        write_rows(state / "queue.csv", QUEUE_COLS, [r for r in queue if r["to"].lower() not in sent_initial])
+    print(f"SENDGRID: {sent_n} sent, {failed} failed, {len(todo) - sent_n - failed} not attempted.")
+    return 1 if failed else 0
+
+
 def cmd_summary(a) -> int:
     """Today's activity (ET) as plain text, for the end-of-day email to Jon."""
     state: Path = a.state
@@ -1363,6 +1418,15 @@ def main() -> int:
     p.add_argument("--detail", default="")
     p.add_argument("emails", nargs="+")
     p.set_defaults(func=cmd_record)
+
+    p = sub.add_parser("send-outbox", help="send this run's outbox.json through SendGrid and log each send")
+    common(p)
+    p.add_argument("--min-delay", type=float, default=4)
+    p.add_argument("--max-delay", type=float, default=10)
+    p.add_argument("--max-failures", type=int, default=3)
+    p.add_argument("--reply-to", default="")
+    p.add_argument("--category", default="partner-outreach")
+    p.set_defaults(func=cmd_send_outbox)
 
     p = sub.add_parser("summary", help="today's activity, for the end-of-day email")
     p.add_argument("--state", type=Path, required=True)

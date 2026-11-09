@@ -359,6 +359,28 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertFalse(po.firm_is_current("Greenberg Traurig", "a@kirkland.com", idx))
         self.assertTrue(po.firm_is_current("Anything", "a@gmail.com", idx))
 
+    def test_send_outbox_via_sendgrid(self):
+        batch = self._outlook_send(cap="3")
+        run("record", "--state", str(self.state), "--status", "skipped", "--detail", "prior Outlook contact", batch[2]["to"])
+        sent = []
+        def fake(a, row):
+            sent.append((row["to"], row["subject"], "<p>" in row["body_html"]))
+            return True, "HTTP 202 x"
+        with mock.patch.object(po, "send_sendgrid", side_effect=fake), mock.patch.object(po.time, "sleep"):
+            code, out = run("send-outbox", "--state", str(self.state), *SENDER, "--sender-address", "X")
+        self.assertEqual(code, 0)
+        self.assertEqual([s[0] for s in sent], [batch[0]["to"], batch[1]["to"]])   # skipped one left out
+        self.assertTrue(all(s[2] for s in sent))
+        queued = {r["to"] for r in rows(self.state / "queue.csv")}
+        self.assertTrue({batch[0]["to"], batch[1]["to"], batch[2]["to"]}.isdisjoint(queued))
+        log = rows(self.state / "sent_log.csv")
+        self.assertEqual(sum(1 for r in log if r["transport"] == "sendgrid" and r["status"] == "sent"), 2)
+        self.assertTrue((self.state / "originals.jsonl").exists())
+        # Running it again sends nothing twice.
+        with mock.patch.object(po, "send_sendgrid", side_effect=fake), mock.patch.object(po.time, "sleep"):
+            run("send-outbox", "--state", str(self.state), *SENDER, "--sender-address", "X")
+        self.assertEqual(len(sent), 2)
+
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")
 

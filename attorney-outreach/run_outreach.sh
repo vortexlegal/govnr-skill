@@ -7,6 +7,7 @@
 #   run_outreach.sh record [args]    log results, e.g. `record a@x.com` or `record --kind followup1 a@x.com`
 #   run_outreach.sh suppress EMAIL.. add opt-outs
 #   run_outreach.sh summary          today's totals and replies (for the end-of-day email)
+#   run_outreach.sh send             send the current outbox through SendGrid and save (no per-email prompts)
 #   run_outreach.sh save "message"   commit and push the state
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -31,6 +32,9 @@ case "${1:-}" in
   record)  shift; $PY record --state "$STATE_REPO/state" "$@" ;;
   suppress) shift; $PY suppress --state "$STATE_REPO/state" "$@" ;;
   summary) sync; $PY summary --state "$STATE_REPO/state" ;;
+  send)    # send the current outbox through SendGrid (verified jbroder@vortexlegal.com; replies go to Outlook), then save
+           rc=0; SENDGRID_API_KEY=${SENDGRID_API_KEY:-proxy-injected} $PY send-outbox --state "$STATE_REPO/state" || rc=$?
+           "$0" save "sendgrid run $(TZ=America/New_York date '+%F %H:%M') ET"; exit $rc ;;
   save)
     cd "$STATE_REPO"; git add -A state
     if git diff --cached --quiet; then echo "nothing to save"; exit 0; fi
