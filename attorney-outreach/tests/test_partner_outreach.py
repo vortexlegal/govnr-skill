@@ -346,6 +346,19 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertIn("Interested, follow up with:", out)
         self.assertIn(first[1]["to"], out)
 
+    def test_firm_domain_mismatch(self):
+        self.assertTrue(po.firm_matches_domain("Taft Stettinius & Hollister LLP", "a@taftlaw.com"))
+        self.assertTrue(po.firm_matches_domain("Glast Phillips Murray Zopolsky, P.C.", "a@gpm-law.com"))
+        self.assertTrue(po.firm_matches_domain("Cipriani & Werner PC", "a@c-wlaw.com"))
+        self.assertFalse(po.firm_matches_domain("Haynes and Boone, LLP", "a@dentons.com"))
+        self.assertFalse(po.firm_matches_domain("Pillinger Miller Tarallo, LLP", "a@c-wlaw.com"))
+        idx = {"mofo.com": ("morrison", 0.94, 194), "klgates.com": ("k l gates", 0.87, 248),
+               "kirkland.com": ("kirkland", 0.94, 1494)}
+        self.assertTrue(po.firm_is_current("Morrison & Foerster LLP", "a@mofo.com", idx))
+        self.assertTrue(po.firm_is_current("K & L", "a@klgates.com", idx))
+        self.assertFalse(po.firm_is_current("Greenberg Traurig", "a@kirkland.com", idx))
+        self.assertTrue(po.firm_is_current("Anything", "a@gmail.com", idx))
+
     def test_subject_rule(self):
         self.assertEqual(po.fix_subject("I’m house roles in NYC"), "In-house roles in NYC")
 

@@ -26,8 +26,8 @@ COMMON=(--state "$STATE_REPO/state" --suppress-file "$STATE_REPO/crm/dnu_all.csv
 for f in "$STATE_REPO"/crm/exclude_*.csv; do [ -e "$f" ] && COMMON+=(--suppress-file "$f"); done  # standing do-not-email lists
 
 case "${1:-}" in
-  preview) sync; $PY send "${COMMON[@]}" --max-per-run "${2:-40}" --daily-cap "${2:-40}" --per-firm-daily 1 ;;
-  batch)   sync; $PY send "${COMMON[@]}" --transport outlook --live ;;
+  preview) sync; $PY send "${COMMON[@]}" --firm-reference "$STATE_REPO/crm/partners_loaded.csv" --max-per-run "${2:-40}" --daily-cap "${2:-40}" --per-firm-daily 1 ;;
+  batch)   sync; $PY send "${COMMON[@]}" --transport outlook --live --firm-reference "$STATE_REPO/crm/partners_loaded.csv" ;;
   record)  shift; $PY record --state "$STATE_REPO/state" "$@" ;;
   suppress) shift; $PY suppress --state "$STATE_REPO/state" "$@" ;;
   summary) sync; $PY summary --state "$STATE_REPO/state" ;;

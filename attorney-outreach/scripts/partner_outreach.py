@@ -24,6 +24,7 @@ Two steps, run on a schedule (e.g. every weekday morning):
 from __future__ import annotations
 
 import argparse
+import collections
 import csv
 import json
 import os
@@ -201,6 +202,61 @@ def name_from_email(email: str, last_name: str) -> str:
     if m and last and m.group(2).startswith(last[:4]):
         return m.group(1).title()
     return ""
+
+
+FIRM_STOPWORDS = {"and", "the", "of", "law", "llp", "llc", "pllc", "pc", "pa", "group", "firm", "offices", "office",
+                  "attorneys", "counselors", "associates", "partners", "legal"}
+FREE_MAIL = {"gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "aol.com", "icloud.com", "me.com", "msn.com",
+             "comcast.net", "att.net", "verizon.net", "live.com", "protonmail.com", "example.com", "example.org"}
+
+
+def firm_matches_domain(firm: str, email: str) -> bool:
+    """False when the email's domain clearly belongs to a different firm than the CRM says
+    (the partner has likely moved, so the email would name the wrong firm)."""
+    d = domain(email)
+    if not d or d in FREE_MAIL or not firm:
+        return True
+    label = re.sub(r"[^a-z0-9]", "", d.split(".")[-2] if d.count(".") >= 1 else d)
+    words = [w for w in re.findall(r"[a-z0-9]+", firm.lower()) if w not in FIRM_STOPWORDS]
+    if not words:
+        return True
+    if any(len(w) >= 4 and w in label for w in words):
+        return True
+    if any(len(w) >= 4 and label.startswith(w[:4]) for w in words):
+        return True
+    initials = "".join(w[0] for w in words)
+    return len(initials) >= 2 and (label.startswith(initials[:2]) or initials.startswith(label[:3]))
+
+
+def domain_firm_index(path: Path) -> dict[str, tuple[str, float, int]]:
+    """email domain -> (most common firm key, its share, row count), from a CRM partner export."""
+    by: dict[str, collections.Counter] = {}
+    for r in read_rows(path):
+        e = (r.get("email") or "").lower()
+        f = r.get("current_company") or r.get("firm") or ""
+        if "@" in e and f:
+            by.setdefault(domain(e), collections.Counter())[firm_key(short_firm(f))] += 1
+    out = {}
+    for d, c in by.items():
+        top, n = c.most_common(1)[0]
+        out[d] = (top, n / sum(c.values()), sum(c.values()))
+    return out
+
+
+def firm_key(f: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", (f or "").lower()).strip()
+
+
+def firm_is_current(firm: str, email: str, index: dict | None) -> bool:
+    """Does the CRM firm still match the email address? Uses the domain's majority firm when there's
+    enough data (3+ partners, 60%+ agreement), otherwise a name-vs-domain check."""
+    d = domain(email)
+    if index and d in index and d not in FREE_MAIL:
+        top, share, n = index[d]
+        if n >= 3 and share >= 0.6:
+            k = firm_key(short_firm(firm))
+            return bool(k) and (k == top or top.startswith(k + " ") or k.startswith(top + " "))
+    return firm_matches_domain(firm, email)
 
 
 def tidy_name(s: str) -> str:
@@ -982,9 +1038,13 @@ def cmd_send(a) -> int:
         f = (f or "").strip(" .,")
         return "" if GENERIC_FIRM_RE.match(f) else re.sub(r"[^a-z0-9]+", " ", f.lower()).strip()
     firms_today: dict[str, int] = {}
+    domains_today: dict[str, int] = {}
+    dropped: set[str] = set()
+    firm_index = domain_firm_index(a.firm_reference) if a.firm_reference and a.firm_reference.exists() else None
     for r in log:
         if sent_on_today(r) and (r.get("kind") or "initial") == "initial":
             firms_today[firm_key(r.get("firm"))] = firms_today.get(firm_key(r.get("firm")), 0) + 1
+            domains_today[domain(r.get("to", ""))] = domains_today.get(domain(r.get("to", "")), 0) + 1
     remaining, attempted, sent, failed = [], 0, 0, 0
     transport = {"sendgrid": send_sendgrid, "smtp": send_smtp, "outlook": None}[a.transport]
     batch = []
@@ -1032,7 +1092,21 @@ def cmd_send(a) -> int:
         if kind == "initial" and (to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS) or to in recent
                                   or is_leadership(row.get("title", ""))):
             continue  # dropped from the queue for good
+        if kind == "initial" and not firm_is_current(row.get("firm", ""), to, firm_index):
+            append_row(state / "sent_log.csv", LOG_COLS, {
+                "sent_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "to": to, "name": row.get("name", ""),
+                "firm": row.get("firm", ""), "subject": row.get("subject", ""), "transport": a.transport,
+                "status": "skipped", "detail": "firm/email domain mismatch (CRM firm likely out of date)",
+                "kind": "initial", "practice": row.get("practice", "")}) if a.live else None
+            if a.live:
+                dropped.add(to)
+            else:
+                remaining.append(row)
+            continue
         fk = firm_key(row.get("firm"))
+        dk = domain(to)
+        if kind == "initial" and dk and dk not in FREE_MAIL and domains_today.get(dk, 0) >= a.per_firm_daily:
+            remaining.append(row); continue
         bucket = "initial" if kind == "initial" else "followup"
         # One partner per firm per day applies to first emails; follow-ups are already spread out.
         firm_full = (kind == "initial" and fk and a.per_firm_daily > 0
@@ -1045,6 +1119,8 @@ def cmd_send(a) -> int:
         attempted += 1
         if fk and kind == "initial":
             firms_today[fk] = firms_today.get(fk, 0) + 1
+        if kind == "initial" and dk:
+            domains_today[dk] = domains_today.get(dk, 0) + 1
         row["subject"] = fix_subject(row["subject"])
         if not a.live:
             print(f"[dry-run] would send {kind} to {row['name']} <{to}>: {row['subject']}")
@@ -1076,6 +1152,9 @@ def cmd_send(a) -> int:
             print(f"FAILED {row['name']} <{to}>: {detail}", file=sys.stderr)
         time.sleep(a.delay + random.uniform(0, a.delay))
 
+    if a.transport == "outlook" and a.live and dropped:
+        write_rows(state / "queue.csv", QUEUE_COLS, [r for r in queue if r["to"].lower() not in dropped])
+        print(f"Skipped {len(dropped)} partner(s) whose CRM firm doesn't match their email domain.")
     if a.transport == "outlook" and a.live:
         (state / "outbox.json").write_text(json.dumps(batch, indent=2))
         n_fu = sum(1 for b in batch if b["kind"] != "initial")
@@ -1252,6 +1331,8 @@ def main() -> int:
     p.add_argument("--daily-cap", type=int, default=int(os.environ.get("OUTREACH_DAILY_CAP", "40")))
     p.add_argument("--max-per-run", type=int, default=int(os.environ.get("OUTREACH_MAX_PER_RUN", "10")),
                    help="first emails per run; schedule several runs a day so sends are spread out")
+    p.add_argument("--firm-reference", type=Path, default=None,
+                   help="CRM partner export used to tell which firm each email domain belongs to")
     p.add_argument("--followup-daily-cap", type=int, default=int(os.environ.get("OUTREACH_FOLLOWUP_DAILY_CAP", "200")),
                    help="follow-ups per day, on top of --daily-cap first emails")
     p.add_argument("--max-followups-per-run", type=int,
