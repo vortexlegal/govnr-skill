@@ -1226,7 +1226,9 @@ def cmd_summary(a) -> int:
         "",
         f"First emails sent: {n('initial')}",
         f"Follow-ups sent: {n('followup1')} (day 5), {n('followup2')} (day 30)",
-        f"Replies: {len(replies)}  |  Opt-outs: {len(sup)}  |  Skipped (prior contact): {n(status='skipped')}  |  Failed: {n(status='failed')}",
+        f"Replies: {len(replies)}  |  Opt-outs: {len(sup)}  |  Failed: {n(status='failed')}",
+        f"Skipped: {sum(1 for r in log if r.get('status') == 'skipped' and 'prior' in (r.get('detail') or ''))} prior contact, "
+        f"{sum(1 for r in log if r.get('status') == 'skipped' and 'mismatch' in (r.get('detail') or ''))} firm out of date in CRM",
         f"Partners still queued: {queue_left:,}",
     ]
     if interested:
