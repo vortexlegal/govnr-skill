@@ -34,6 +34,22 @@ class PartnerOutreachTest(unittest.TestCase):
                       "--sender-address", "123 Main St")
         self.assertEqual(code, 0)
 
+    def test_skipped_or_replied_not_requeued(self):
+        q = self.state / "queue.csv"
+        run("record", "--state", str(self.state), "--status", "skipped", "--detail", "review firm name",
+            "dana.whitfield@example.com")
+        run("record", "--state", str(self.state), "--status", "replied", "--detail", "interested",
+            "marcus.o@example.com")
+        q.unlink()
+        code, _ = run("prepare", "--state", str(self.state), *SENDER, "--contacts",
+                      str(ROOT / "examples" / "crm_partners.csv"), "--sender-company", "Vortex Legal",
+                      "--sender-address", "123 Main St")
+        self.assertEqual(code, 0)
+        queued = {r["to"] for r in rows(q)}
+        self.assertNotIn("dana.whitfield@example.com", queued)
+        self.assertNotIn("marcus.o@example.com", queued)
+        self.assertIn("ana.ruiz@example.com", queued)
+
     def test_partner_filter_and_suppression(self):
         queued = {r["to"] for r in rows(self.state / "queue.csv")}
         self.assertEqual(queued, {"dana.whitfield@example.com", "marcus.o@example.com",

@@ -275,6 +275,15 @@ def recently_emailed(state: Path, days: int) -> set[str]:
     return out
 
 
+def decided_out(state: Path) -> set[str]:
+    """Addresses this campaign already decided on without a first email going out: a first email
+    logged as skipped (recent recruiter contact, firm name to review) or a reply. `prepare` must not
+    queue them again on the next CRM sync."""
+    return {r["to"].lower() for r in read_rows(state / "sent_log.csv")
+            if r.get("to") and (r.get("status") == "replied"
+                                or (r.get("status") == "skipped" and r.get("kind", "initial") in ("initial", "")))}
+
+
 def fix_subject(subject: str) -> str:
     # CRM rule: never send "I'm house roles"; it should be "In-house roles".
     return re.sub(r"I[’']m house roles", "In-house roles", subject, flags=re.I)
@@ -703,6 +712,7 @@ def cmd_prepare(a) -> int:
     a.subjects = a.subjects or audience_template(a.audience, "subjects.txt")
     suppressed = load_suppressed(state, a.suppress_file)
     recent = recently_emailed(state, a.recontact_days)
+    held = decided_out(state)
     queued = {r["to"].lower() for r in read_rows(state / "queue.csv")}
 
     body_tpl = Template(a.template.read_text(encoding="utf-8"))
@@ -765,6 +775,8 @@ def cmd_prepare(a) -> int:
             skip("blocked recipient domain"); continue
         if email in recent:
             skip(f"emailed within {a.recontact_days} days"); continue
+        if email in held:
+            skip("skipped or replied earlier in this campaign"); continue
         if email in queued or email in seen:
             skip("already queued / duplicate"); continue
         if not greeting_name(c["first_name"]):
