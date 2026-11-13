@@ -988,6 +988,7 @@ def cmd_send(a) -> int:
 
     suppressed = load_suppressed(state, a.suppress_file)
     recent = recently_emailed(state, a.recontact_days)
+    held = decided_out(state)  # skipped or replied: never send a first email, even if a stale queue row survives
     queue = read_rows(state / "queue.csv")
     def firm_key(f):
         # Placeholders like "Law Office" are not one firm: they don't count toward the per-firm limit.
@@ -1042,7 +1043,7 @@ def cmd_send(a) -> int:
         to = row["to"].lower()
         kind = row.get("kind", "initial")
         if kind == "initial" and (to in suppressed or domain_blocked(to, BLOCKED_RECIPIENT_DOMAINS) or to in recent
-                                  or is_leadership(row.get("title", ""))):
+                                  or to in held or is_leadership(row.get("title", ""))):
             continue  # dropped from the queue for good
         fk = firm_key(row.get("firm"))
         bucket = "initial" if kind == "initial" else "followup"

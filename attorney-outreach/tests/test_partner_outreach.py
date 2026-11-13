@@ -50,6 +50,17 @@ class PartnerOutreachTest(unittest.TestCase):
         self.assertNotIn("marcus.o@example.com", queued)
         self.assertIn("ana.ruiz@example.com", queued)
 
+    def test_send_skips_held_even_if_queued(self):
+        # A stale queue row for someone already logged as skipped must not be sent.
+        q = rows(self.state / "queue.csv"); target = q[0]["to"]
+        with open(self.state / "sent_log.csv", "a", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=po.LOG_COLS)
+            if f.tell() == 0: w.writeheader()
+            w.writerow({"sent_at": "2026-11-08T00:00:00+00:00", "to": target, "status": "skipped", "kind": "initial"})
+        code, out = run("send", "--state", str(self.state), *SENDER, "--max-per-run", "50", "--transport", "outlook",
+                        "--ignore-hours")
+        self.assertNotIn(target, out)
+
     def test_partner_filter_and_suppression(self):
         queued = {r["to"] for r in rows(self.state / "queue.csv")}
         self.assertEqual(queued, {"dana.whitfield@example.com", "marcus.o@example.com",
