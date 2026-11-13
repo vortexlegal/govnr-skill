@@ -29,7 +29,11 @@ save() {
   cd "$STATE_REPO"; git add -A crm state state-personal-*
   if git diff --cached --quiet; then echo "nothing to save"; cd - >/dev/null; return 0; fi
   git -c user.name=Claude -c user.email=noreply@anthropic.com commit -qm "$1"
-  for i in 1 2 3 4; do git push -q origin "$BRANCH" && break || sleep $((2**i)); done
+  # Another session may push to the same branch: rebase onto it and retry, so the send log is never lost.
+  for i in 1 2 3 4; do
+    git push -q origin "$BRANCH" && break
+    sleep $((2**i)); git pull -q --rebase origin "$BRANCH" || { git rebase --abort 2>/dev/null; echo "push failed: rebase conflict"; return 1; }
+  done
   echo "saved: $(git log --oneline -1)"; cd - >/dev/null
 }
 prepare_all() {
