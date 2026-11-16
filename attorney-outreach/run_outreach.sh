@@ -39,7 +39,15 @@ case "${1:-}" in
     cd "$STATE_REPO"; git add -A state
     if git diff --cached --quiet; then echo "nothing to save"; exit 0; fi
     git -c user.name=Claude -c user.email=noreply@anthropic.com commit -qm "${2:-outreach run}"
-    for i in 1 2 3 4; do git push -q origin "$BRANCH" && break || sleep $((2**i)); done
-    echo "saved: $(git log --oneline -1)" ;;
+    # Another campaign may push to the same branch in between: on a rejected push, fetch and
+    # rebase our commit onto theirs (they touch different files), then retry.
+    pushed=0
+    for i in 1 2 3 4; do
+      git push -q origin "$BRANCH" && { pushed=1; break; }
+      sleep $((2**i))
+      git fetch -q origin "+refs/heads/$BRANCH:refs/remotes/origin/$BRANCH" && git rebase -q "origin/$BRANCH" || { git rebase --abort 2>/dev/null; true; }
+    done
+    if [ $pushed = 1 ]; then echo "saved: $(git log --oneline -1)"
+    else echo "SAVE FAILED: committed locally but NOT pushed: $(git log --oneline -1)"; exit 2; fi ;;
   *) sed -n '2,11p' "$0"; exit 1 ;;
 esac
