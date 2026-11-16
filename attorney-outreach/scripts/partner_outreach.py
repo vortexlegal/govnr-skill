@@ -156,20 +156,37 @@ FIRM_FILLER_RE = re.compile(r"\b(attorneys?|counsel+ors?|lawyers|at law|law firm
                             r"legal group|& associates|and associates)\b.*$", re.I)
 
 
+# How firms are referred to in emails when it isn't simply the first names (Jon's list; add more in
+# <state repo>/crm/firm_nicknames.csv with columns firm,nickname).
+FIRM_NICKNAMES = {"holland & knight": "HK"}
+
+
+def load_firm_nicknames(path: Path) -> None:
+    for r in read_rows(path):
+        if r.get("firm") and r.get("nickname"):
+            FIRM_NICKNAMES[r["firm"].strip().lower()] = r["nickname"].strip()
+
+
 def short_firm(name: str) -> str:
     """How a partner would say their own firm: first two words, no entity suffix.
 
     "Dawda Mann Mulcahy & Sadler PLC" -> "Dawda Mann"; "Honigman LLP Attorneys & Counselors" -> "Honigman";
-    "Vorys, Sater, Seymour and Pease, LLP" -> "Vorys Sater"; "Kaufman & Dolowich" -> "Kaufman";
+    "Vorys, Sater, Seymour and Pease, LLP" -> "Vorys Sater"; "Kaufman & Dolowich" -> "Kaufman & Dolowich";
     "Law Offices of Jane Doe, P.A." -> "Jane Doe".
     """
     n = (name or "").strip()
+    base = ENTITY_SUFFIX_RE.split(n)[0].strip(" ,") if ENTITY_SUFFIX_RE.search(n) else n
+    if base.lower() in FIRM_NICKNAMES:
+        return FIRM_NICKNAMES[base.lower()]
     n = re.sub(r"^(the\s+)?law\s+offices?\s+of\s+", "", n, flags=re.I)
     n = ENTITY_SUFFIX_RE.split(n)[0] if ENTITY_SUFFIX_RE.search(n) else n
     n = FIRM_FILLER_RE.sub("", n)
     n = re.sub(r"\b([A-Za-z]{1,2})\s*&\s*([A-Za-z]{1,2})\b", r"\1&\2", n)  # "K & L Gates" -> "K&L Gates"
     words = [w.strip(",.;") for w in n.replace(",", " ").split() if w.strip(",.;")]
-    words = words[:2]
+    if len(words) >= 3 and words[1] in {"&", "and"} and words[2].lower() not in {"of", "the", "&", "and", "associates", "associate", "partners", "company", "co"}:
+        words = [words[0], "&", words[2]]  # "Holland & Knight", not a cut-off "Holland"
+    else:
+        words = words[:2]
     while words and words[-1].lower() in {"&", "and", "of", "the", "+"}:
         words.pop()
     out = " ".join(words) or (name or "").strip()
@@ -1307,6 +1324,8 @@ def main() -> int:
     a = ap.parse_args()
     global FOOTER_TEXT
     FOOTER_TEXT = getattr(a, "sender_address", "") or os.environ.get("OUTREACH_SENDER_ADDRESS", "")
+    if getattr(a, "state", None):
+        load_firm_nicknames(Path(a.state).resolve().parent / "crm" / "firm_nicknames.csv")
     if a.cmd in ("prepare", "send") and (not a.sender_name or not a.sender_email):
         ap.error("--sender-name and --sender-email are required (or set OUTREACH_SENDER_NAME / OUTREACH_SENDER_EMAIL)")
     return a.func(a)

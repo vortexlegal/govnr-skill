@@ -147,6 +147,13 @@ def main() -> int:
             r["current_title"] = o.get("title", "").strip()
             r["current_company"] = r["current_company"].strip() or o.get("company", "").strip()
             r["title_source"] = "Reviewed: " + (o.get("source") or "title confirmed from CRM notes")
+    # Firm names the CRM has misspelled (crm/firm_name_fixes.csv: wrong,right), e.g. "Keneddys" -> "Kennedys".
+    fixes = {r["wrong"].strip().lower(): r["right"].strip() for r in read(a.out.parent / "firm_name_fixes.csv")
+             if r.get("wrong") and r.get("right")}
+    for r in rows:
+        fixed = fixes.get(r["current_company"].strip().lower())
+        if fixed:
+            r["current_company"] = fixed
     write(a.out / "candidates.csv", COLS, rows)
     write(a.out / "titled.csv", COLS, [r for r in rows if r["current_title"].strip()])
     write(a.out / "untitled.csv", COLS, [r for r in rows if not r["current_title"].strip()])
