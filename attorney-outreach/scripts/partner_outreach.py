@@ -957,7 +957,7 @@ def send_sendgrid(a, row) -> tuple[bool, str]:
     unsub = a.unsubscribe_email or a.sender_email
     payload = {
         "personalizations": [{"to": [{"email": row["to"], "name": row["name"]}]}],
-        "from": {"email": a.sender_email, "name": a.sender_name},
+        "from": {"email": row.get("_from") or a.sender_email, "name": a.sender_name},
         "reply_to": {"email": a.reply_to or a.sender_email},
         "subject": row["subject"],
         "content": [{"type": "text/plain", "value": row["body"]},
@@ -1081,7 +1081,8 @@ def cmd_send(a) -> int:
                               "practice": practice, "kind": f"followup{step}", "original_subject": subj,
                               "original_sent_at": r["sent_at"],
                               "subject": subj if subj.lower().startswith("re:") else f"RE: {subj}", "body": body,
-                              "body_html": quoted_reply_html(body, originals.get(to), a.sender_name, a.sender_email)})
+                              "body_html": quoted_reply_html(body, originals.get(to), a.sender_name,
+                                                             (originals.get(to) or {}).get("sender") or a.sender_email)})
     if followups and not a.sender_address:
         print("Refusing: follow-ups need --sender-address / OUTREACH_SENDER_ADDRESS.", file=sys.stderr)
         return 2
@@ -1206,6 +1207,50 @@ def cmd_record(a) -> int:
     return 0
 
 
+def sendgrid_domain_valid(domain_id: str) -> bool:
+    """True once SendGrid shows the domain's DNS records (SPF/DKIM) as verified."""
+    key = os.environ.get("SENDGRID_API_KEY")
+    if not (key and domain_id):
+        return False
+    req = urllib.request.Request(f"https://api.sendgrid.com/v3/whitelabel/domains/{domain_id}",
+                                 headers={"Authorization": f"Bearer {key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            d = json.loads(r.read())
+    except (urllib.error.URLError, ValueError):
+        return False
+    if not d.get("valid"):
+        # ask SendGrid to re-check the DNS records; takes effect from the next run
+        try:
+            urllib.request.urlopen(urllib.request.Request(
+                f"https://api.sendgrid.com/v3/whitelabel/domains/{domain_id}/validate", data=b"",
+                headers={"Authorization": f"Bearer {key}"}, method="POST"), timeout=20).close()
+        except urllib.error.URLError:
+            pass
+    return bool(d.get("valid"))
+
+
+def alt_sender_allowance(state: Path, alt: str, ramp: list[int]) -> int:
+    """How many more first emails the new sending address may send today under its warm-up ramp."""
+    days, today_n = set(), 0
+    today = datetime.now(ET).date()
+    for r in load_originals_all(state):
+        if (r.get("sender") or "").lower() == alt:
+            d = datetime.fromisoformat(r["sent_at"]).astimezone(ET).date()
+            days.add(d)
+            today_n += d == today
+    idx = len(days - {today})
+    cap = ramp[idx] if idx < len(ramp) else 10**9
+    return max(0, cap - today_n)
+
+
+def load_originals_all(state: Path) -> list[dict]:
+    p = state / "originals.jsonl"
+    if not p.exists():
+        return []
+    return [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
 def cmd_send_outbox(a) -> int:
     """Send this run's outbox.json through SendGrid in one go (no per-email approvals), logging each send.
     Entries already logged since the outbox was written (e.g. skipped for prior contact) are left out."""
@@ -1231,11 +1276,38 @@ def cmd_send_outbox(a) -> int:
     if domain_blocked(a.sender_email, BLOCKED_SENDER_DOMAINS):
         print(f"Refusing: {domain(a.sender_email)} is on the do-not-send-from list.", file=sys.stderr); return 2
     queue = read_rows(state / "queue.csv")
+    # Sender per email: follow-ups come from whatever address sent the original; first emails move to the
+    # new sending domain once it is verified, within its daily warm-up allowance.
+    originals = load_originals(state)
+    alt = (a.alt_sender_email or "").lower()
+    allowance = 0
+    if alt and sendgrid_domain_valid(a.alt_domain_id):
+        allowance = alt_sender_allowance(state, alt, [int(x) for x in a.alt_ramp.split(",") if x.strip()])
+        print(f"New sender {alt}: verified, {allowance} first email(s) allowed today.")
+    elif alt:
+        print(f"New sender {alt}: domain not verified yet in SendGrid; sending from {a.sender_email}.")
+    for e in todo:
+        if e["kind"] == "initial":
+            if allowance > 0:
+                e["_from"] = alt; allowance -= 1
+        else:
+            e["_from"] = (originals.get(e["to"].lower()) or {}).get("sender") or a.sender_email
+    deadline = time.monotonic() + a.window_min * 60 if a.window_min else None
     sent_initial, sent_n, failed = set(), 0, 0
     for i, e in enumerate(todo):
         if i:
-            time.sleep(random.uniform(a.min_delay, a.max_delay))
+            if deadline:
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    print(f"Send window over: leaving {len(todo) - i} email(s) for the next run.")
+                    break
+                gap = left / (len(todo) - i + 1) * random.uniform(0.7, 1.3)
+                time.sleep(max(a.min_delay, min(gap, a.max_gap)))
+            else:
+                time.sleep(random.uniform(a.min_delay, a.max_delay))
         ok, detail = send_sendgrid(a, e)
+        sender = e.get("_from") or a.sender_email
+        detail = f"{detail} from={sender}"
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         append_row(state / "sent_log.csv", LOG_COLS, {
             "sent_at": now, "to": e["to"].lower(), "name": e.get("name", ""), "firm": e.get("firm", ""),
@@ -1248,7 +1320,7 @@ def cmd_send_outbox(a) -> int:
                 sent_initial.add(e["to"].lower())
                 with (state / "originals.jsonl").open("a", encoding="utf-8") as f:
                     f.write(json.dumps({"to": e["to"].lower(), "name": e.get("name", ""), "subject": e.get("subject", ""),
-                                        "sent_at": now, "body": e.get("body", "")}) + "\n")
+                                        "sent_at": now, "body": e.get("body", ""), "sender": sender}) + "\n")
         else:
             failed += 1
             print(f"FAILED  {e['kind']:<9} {e['to']}: {detail}", file=sys.stderr)
@@ -1426,6 +1498,17 @@ def main() -> int:
     p.add_argument("--max-failures", type=int, default=3)
     p.add_argument("--reply-to", default="")
     p.add_argument("--category", default="partner-outreach")
+    p.add_argument("--window-min", type=float, default=float(os.environ.get("OUTREACH_SEND_WINDOW_MIN", "0")),
+                   help="spread the batch evenly over this many minutes (0 = use --min/--max-delay); "
+                        "anything not sent by then waits for the next run")
+    p.add_argument("--max-gap", type=float, default=120, help="longest pause between emails with --window-min")
+    p.add_argument("--alt-sender-email", default=os.environ.get("OUTREACH_ALT_SENDER_EMAIL", ""),
+                   help="send first emails from this address once its SendGrid domain is verified")
+    p.add_argument("--alt-domain-id", default=os.environ.get("OUTREACH_ALT_DOMAIN_ID", ""),
+                   help="SendGrid domain-authentication id for the alt sender's domain")
+    p.add_argument("--alt-ramp", default=os.environ.get("OUTREACH_ALT_RAMP", "25,25,50,50,75,100,125,150,200"),
+                   help="warm-up: max first emails from the alt sender on its 1st, 2nd, ... sending day; "
+                        "no limit after the list ends")
     p.set_defaults(func=cmd_send_outbox)
 
     p = sub.add_parser("summary", help="today's activity, for the end-of-day email")

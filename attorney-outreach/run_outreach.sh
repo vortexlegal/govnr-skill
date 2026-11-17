@@ -14,6 +14,10 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 STATE_REPO=${STATE_REPO:-/home/user/vlcrm}
 BRANCH=partner-outreach-state
 PY="python3 $HERE/scripts/partner_outreach.py"
+LOCK="$STATE_REPO/.sending.lock"
+if [ "${1:-}" = batch ] && [ -e "$LOCK" ] && kill -0 "$(cat "$LOCK")" 2>/dev/null; then
+  echo "SEND IN PROGRESS (pid $(cat "$LOCK")): the previous run is still sending; skip this run's batch."; exit 3
+fi
 
 sync() {
   cd "$STATE_REPO"
@@ -32,7 +36,9 @@ case "${1:-}" in
   record)  shift; $PY record --state "$STATE_REPO/state" "$@" ;;
   suppress) shift; $PY suppress --state "$STATE_REPO/state" "$@" ;;
   summary) sync; $PY summary --state "$STATE_REPO/state" ;;
-  send)    # send the current outbox through SendGrid (verified jbroder@vortexlegal.com; replies go to Outlook), then save
+  send)    # send the current outbox through SendGrid (paced over OUTREACH_SEND_WINDOW_MIN; replies go to Outlook), then save.
+           # Takes up to ~45 min: run it in the background. A lock stops the next run's batch from starting meanwhile.
+           echo $$ > "$LOCK"; trap 'rm -f "$LOCK"' EXIT
            rc=0; SENDGRID_API_KEY=${SENDGRID_API_KEY:-proxy-injected} $PY send-outbox --state "$STATE_REPO/state" || rc=$?
            "$0" save "sendgrid run $(TZ=America/New_York date '+%F %H:%M') ET"; exit $rc ;;
   save)
