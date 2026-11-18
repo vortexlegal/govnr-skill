@@ -7,6 +7,7 @@
 #   run_outreach.sh record [args]    log results, e.g. `record a@x.com` or `record --kind followup1 a@x.com`
 #   run_outreach.sh suppress EMAIL.. add opt-outs
 #   run_outreach.sh summary          today's totals and replies (for the end-of-day email)
+#   run_outreach.sh checks           print the two combined Outlook searches for this outbox
 #   run_outreach.sh send             send the current outbox through SendGrid and save (no per-email prompts)
 #   run_outreach.sh save "message"   commit and push the state
 set -euo pipefail
@@ -36,6 +37,23 @@ case "${1:-}" in
   record)  shift; $PY record --state "$STATE_REPO/state" "$@" ;;
   suppress) shift; $PY suppress --state "$STATE_REPO/state" "$@" ;;
   summary) sync; $PY summary --state "$STATE_REPO/state" ;;
+  checks)  # print the two combined Outlook searches for the current outbox (one call each instead of one per person)
+           python3 - "$STATE_REPO/state/outbox.json" <<'PY'
+import json, sys
+from datetime import datetime, timedelta, timezone
+box = json.load(open(sys.argv[1]))
+fu = [e for e in box if e["kind"] != "initial"]
+new = [e for e in box if e["kind"] == "initial"]
+if fu:
+    since = min(e.get("original_sent_at") or "" for e in fu)[:10]
+    print("FOLLOW-UP REPLY CHECK (%d): outlook_email_search afterDateTime=%s limit=25 query=" % (len(fu), since))
+    print(" OR ".join("from:" + e["to"] for e in fu))
+if new:
+    since = (datetime.now(timezone.utc) - timedelta(days=180)).date().isoformat()
+    print("PRIOR-CONTACT CHECK (%d): outlook_email_search afterDateTime=%s limit=25 query=" % (len(new), since))
+    print(" OR ".join("to:" + e["to"] for e in new))
+PY
+           ;;
   send)    # send the current outbox through SendGrid (paced over OUTREACH_SEND_WINDOW_MIN; replies go to Outlook), then save.
            # Takes up to ~45 min: run it in the background. A lock stops the next run's batch from starting meanwhile.
            echo $$ > "$LOCK"; trap 'rm -f "$LOCK"' EXIT
