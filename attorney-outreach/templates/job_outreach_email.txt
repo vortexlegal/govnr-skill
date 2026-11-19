@@ -1,0 +1,12 @@
+Hi $first_name,
+
+[[I am a legal recruiter with VortexLegal.||I'm a legal recruiter with VortexLegal.]] [[I'm working on a $job_title opening $job_where||I have a new $job_title opening $job_where||A client just opened a $job_title role $job_where]], and your $practice_work at $firm [[looks like a close fit||lines up well with it]].
+
+$job_summary
+
+[[Would you be open to a quick, confidential conversation?||Worth a quick, confidential call?||Would you be open to hearing more?]]
+
+[[Let me know if you're interested or would like to learn more!||Let me know if you'd like to learn more!||If you're interested or want to learn more, just let me know!]]
+
+Best regards,
+$sender_signature
