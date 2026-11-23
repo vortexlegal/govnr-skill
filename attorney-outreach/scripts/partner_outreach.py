@@ -348,12 +348,43 @@ def sender_signature(a) -> str:
 FOOTER_TEXT = ""
 
 
+# CAN-SPAM: a visible way to opt out (Jon 2026-11-23). Replies are already caught and suppressed by each run.
+OPT_OUT_TEXT = os.environ.get(
+    "OUTREACH_OPT_OUT_TEXT",
+    "If you'd rather not hear from me about opportunities, just reply \"no thanks\" and I won't reach out again.")
+
+
+def with_optout(body: str, address: str = "") -> str:
+    """Add the opt-out line once, just above the mailing-address footer (or at the end if there is none)."""
+    if not OPT_OUT_TEXT or OPT_OUT_TEXT in body:
+        return body
+    body = body.rstrip()
+    addr = (address or FOOTER_TEXT or "").strip()
+    if addr and body.endswith(addr):
+        head = body[: -len(addr)].rstrip()
+        return f"{head}\n\n{OPT_OUT_TEXT}\n\n{addr}\n"
+    return f"{body}\n\n{OPT_OUT_TEXT}\n"
+
+
+def html_with_optout(html_body: str) -> str:
+    """Same for an already-built HTML body: before the grey footer paragraph, else before a quoted original."""
+    import html as _h
+    if not OPT_OUT_TEXT or _h.escape(OPT_OUT_TEXT, quote=False) in html_body or OPT_OUT_TEXT in html_body:
+        return html_body
+    para = "<p>" + _h.escape(OPT_OUT_TEXT, quote=False) + "</p>"
+    for marker in ('<p style="font-size:10px', "<hr>"):
+        i = html_body.find(marker)
+        if i != -1:
+            return html_body[:i] + para + html_body[i:]
+    return html_body + para
+
+
 def with_footer(body: str, address: str) -> str:
-    """Body plus the mailing address as its own last paragraph (CAN-SPAM), below the signature."""
+    """Body plus the opt-out line and the mailing address as its own last paragraph (CAN-SPAM), below the signature."""
     body = body.rstrip()
     if not address or body.endswith(address):
-        return body + "\n"
-    return body + "\n\n" + address + "\n"
+        return with_optout(body + "\n", address)
+    return with_optout(body + "\n\n" + address + "\n", address)
 
 
 # CRM practice tags -> how a recruiter would say them.
@@ -960,8 +991,9 @@ def send_sendgrid(a, row) -> tuple[bool, str]:
         "from": {"email": row.get("_from") or a.sender_email, "name": a.sender_name},
         "reply_to": {"email": a.reply_to or a.sender_email},
         "subject": row["subject"],
-        "content": [{"type": "text/plain", "value": row["body"]},
-                    {"type": "text/html", "value": row.get("body_html") or to_html(row["body"])}],
+        "content": [{"type": "text/plain", "value": with_optout(row["body"], a.sender_address)},
+                    {"type": "text/html", "value": html_with_optout(row["body_html"]) if row.get("body_html")
+                     else to_html(with_optout(row["body"], a.sender_address))}],
         "headers": {"List-Unsubscribe": f"<mailto:{unsub}?subject=unsubscribe>"},
         "categories": [getattr(a, "category", "") or "attorney-outreach"],
         "tracking_settings": {"click_tracking": {"enable": False}, "open_tracking": {"enable": False},
